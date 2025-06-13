@@ -74,8 +74,10 @@ char *argv0;
 #define FILE_ATTRIBUTE_READONLY		0x0001L
 #define FILE_ATTRIBUTE_HIDDEN		0x0002L
 #define FILE_ATTRIBUTE_SYSTEM		0x0004L
+
 #define FILE_ATTRIBUTE_VOLUME		0x0008L
 #define FILE_ATTRIBUTE_DIRECTORY	0x0010L
+
 #define FILE_ATTRIBUTE_ARCHIVE		0x0020L
 #define FILE_ATTRIBUTE_DEVICE		0x0040L
 #define FILE_ATTRIBUTE_NORMAL		0x0080L
@@ -86,108 +88,63 @@ char *argv0;
 #define FILE_ATTRIBUTE_OFFLINE		0x1000L
 #define FILE_ATTRIBUTE_NONINDEXED	0x2000L
 #define FILE_ATTRIBUTE_ENCRYPTED	0x4000L
+#define FILE_ATTRIBUTE_INTEGRITY	0x8000L
 #define FILE_ATTRIBUTE_ALL_MASK 	0x7FFFL
+
+struct attr {
+    uint16_t a;
+    char c;
+} attribs[] = {
+    { FILE_ATTRIBUTE_READONLY,      'R' },
+    { FILE_ATTRIBUTE_HIDDEN,        'H' },
+    { FILE_ATTRIBUTE_SYSTEM,        'S' },
+    { FILE_ATTRIBUTE_VOLUME,        'v' },
+    { FILE_ATTRIBUTE_DIRECTORY,     'D' },
+    { FILE_ATTRIBUTE_ARCHIVE,       'A' },
+    { FILE_ATTRIBUTE_DEVICE,        'd' },
+    { FILE_ATTRIBUTE_NORMAL,        'N' },
+    { FILE_ATTRIBUTE_TEMPORARY,     'T' },
+    { FILE_ATTRIBUTE_SPARSE,        's' },
+    { FILE_ATTRIBUTE_REPARSE_POINT, 'L' },
+    { FILE_ATTRIBUTE_COMPRESSED,    'C' },
+    { FILE_ATTRIBUTE_OFFLINE,       'O' },
+    { FILE_ATTRIBUTE_NONINDEXED,    'I' },
+    { FILE_ATTRIBUTE_ENCRYPTED,     'E' },
+    { FILE_ATTRIBUTE_INTEGRITY,     'V' },
+    { 0, 0 },
+};
 
 int
 str2attrib(uint16_t *ap,
 	   char *s) {
     uint16_t a = 0;
-
+    int i;
     
     if (!s || !*s)
 	return 0;
     
-    while (*s) 
-	switch (*s++) {
-	case 'R':
-	    a |= FILE_ATTRIBUTE_READONLY;
-	    break;
-	case 'H':
-	    a |= FILE_ATTRIBUTE_HIDDEN;
-	    break;
-	case 'S':
-	    a |= FILE_ATTRIBUTE_SYSTEM;
-	    break;
-	case 'V':
-	    a |= FILE_ATTRIBUTE_VOLUME;
-	    break;
-	case 'D':
-	    a |= FILE_ATTRIBUTE_DIRECTORY;
-	    break;
-	case 'A':
-	    a |= FILE_ATTRIBUTE_ARCHIVE;
-	    break;
-	case 'd':
-	    a |= FILE_ATTRIBUTE_DEVICE;
-	    break;
-	case 'N':
-	    a |= FILE_ATTRIBUTE_NORMAL;
-	    break;
-	case 'T':
-	    a |= FILE_ATTRIBUTE_TEMPORARY;
-	    break;
-	case 's':
-	    a |= FILE_ATTRIBUTE_SPARSE;
-	    break;
-	case 'r':
-	    a |= FILE_ATTRIBUTE_REPARSE_POINT;
-	    break;
-	case 'C':
-	    a |= FILE_ATTRIBUTE_COMPRESSED;
-	    break;
-	case 'O':
-	    a |= FILE_ATTRIBUTE_OFFLINE;
-	    break;
-	case 'n':
-	    a |= FILE_ATTRIBUTE_NONINDEXED;
-	    break;
-	case 'E':
-	    a |= FILE_ATTRIBUTE_ENCRYPTED;
-	    break;
-	default:
+    for (; *s; ++s) {
+	for (i = 0; attribs[i].a && attribs[i].c != *s; i++)
+	    ;
+	if (!attribs[i].a)
 	    return -1;
-	}
-
+	a |= attribs[i].a;
+    }
+    
     *ap = a;
     return 1;
 }
 
 char *
 attrib2str(uint16_t a) {
-    static char buf[16];
-
-    buf[0] = '\0';
-    if (a & FILE_ATTRIBUTE_READONLY)
-	strcat(buf, "R");
-    if (a & FILE_ATTRIBUTE_HIDDEN)
-	strcat(buf, "H");
-    if (a & FILE_ATTRIBUTE_SYSTEM)
-	strcat(buf, "S");
-    if (a & FILE_ATTRIBUTE_VOLUME)
-	strcat(buf, "V");
-    if (a & FILE_ATTRIBUTE_DIRECTORY)
-	strcat(buf, "D");
-    if (a & FILE_ATTRIBUTE_ARCHIVE)
-	strcat(buf, "A");
-    if (a & FILE_ATTRIBUTE_DEVICE)
-	strcat(buf, "d");
-    if (a & FILE_ATTRIBUTE_NORMAL)
-	strcat(buf, "N");
-    if (a & FILE_ATTRIBUTE_TEMPORARY)
-	strcat(buf, "T");
-    if (a & FILE_ATTRIBUTE_SPARSE)
-	strcat(buf, "s");
-    if (a & FILE_ATTRIBUTE_REPARSE_POINT)
-	strcat(buf, "r");
-    if (a & FILE_ATTRIBUTE_COMPRESSED)
-	strcat(buf, "C");
-    if (a & FILE_ATTRIBUTE_OFFLINE)
-	strcat(buf, "O");
-    if (a & FILE_ATTRIBUTE_NONINDEXED)
-	strcat(buf, "n");
-    if (a & FILE_ATTRIBUTE_ENCRYPTED)
-	strcat(buf, "E");
-
+    static char buf[64], *bp;
+    int i;
+	
+    bp = buf;
+    for (i = 0; attribs[i].a; i++)
+	if (attribs[i].a & a)
+	    *bp++ = attribs[i].c;
+    
     return buf;
 }
 
@@ -460,6 +417,31 @@ parse_dosattrib(DOSATTRIB *da,
     return version;
 }
 
+int
+put_hex(unsigned char **bp,
+	size_t *bs,
+	uint64_t v,
+	size_t vs) {
+    int i;
+    
+    if (*bs < 5)
+	return -1;
+
+    *(*bp)++ = '0';
+    *(*bp)++ = 'x';
+
+    for (i = vs-1; i >= 0; i--) {
+	unsigned char c = (v&0xF);
+	
+	(*bp)[i] = (c > 0xA ? c-0xA+'A' : c+'0');
+    }
+    (*bp) += vs;
+    *(*bp) = '\0';
+    *bs -= 3+vs;
+    
+    return 0;
+}
+
 ssize_t
 create_dosattrib(DOSATTRIB *da,
 		 int version,
@@ -467,20 +449,20 @@ create_dosattrib(DOSATTRIB *da,
 		 size_t bs) {
     unsigned char *bp = buf;
     
-    if (version == 2) {
-	if (bs < 5)
-	    return -1;
-	
-	snprintf((char *) bp, bs, "0x%02x", da->dosinfo_2.attrib);
-	bp += 5;
-	bs -= 5;
-    } else {
-	if (bs < 1)
-	    return -1;
-
-	*bp++ = '\0';
-	bs--;
+    switch (version) {
+    case 2:
+	put_hex(&bp, &bs, da->dosinfo_2.attrib, sizeof(da->dosinfo_2.attrib));
+	break;
+    case 3:
+	put_hex(&bp, &bs, da->dosinfo_3.attrib, sizeof(da->dosinfo_3.attrib));
+	break;
     }
+    
+    if (bs < 1)
+	return -1;
+    
+    *bp++ = '\0';
+    bs--;
     
     put_uint16(version, &bp, &bs);
   
@@ -595,6 +577,7 @@ walker(const char *path,
 
     rlen = 0;
     version = parse_dosattrib(&da, oblob, len, &rlen);
+    
     switch (version) {
     case 1:
 	oa = da.dosinfo_1.attrib;
@@ -621,7 +604,7 @@ walker(const char *path,
 	na |= f_orattribs;
     if (f_andattribs != 0xFFFF)
 	na &= f_andattribs;
-
+    
     /* Sanity check real type vs attribute type */
     if ((type == FTW_D || type == FTW_DP) &&
 	(na & FILE_ATTRIBUTE_DIRECTORY) == 0) {
