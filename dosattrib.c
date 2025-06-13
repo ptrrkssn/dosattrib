@@ -94,23 +94,24 @@ char *argv0;
 struct attr {
     uint16_t a;
     char c;
+    char *d;
 } attribs[] = {
-    { FILE_ATTRIBUTE_READONLY,      'R' },
-    { FILE_ATTRIBUTE_HIDDEN,        'H' },
-    { FILE_ATTRIBUTE_SYSTEM,        'S' },
-    { FILE_ATTRIBUTE_VOLUME,        'v' },
-    { FILE_ATTRIBUTE_DIRECTORY,     'D' },
-    { FILE_ATTRIBUTE_ARCHIVE,       'A' },
-    { FILE_ATTRIBUTE_DEVICE,        'd' },
-    { FILE_ATTRIBUTE_NORMAL,        'N' },
-    { FILE_ATTRIBUTE_TEMPORARY,     'T' },
-    { FILE_ATTRIBUTE_SPARSE,        's' },
-    { FILE_ATTRIBUTE_REPARSE_POINT, 'L' },
-    { FILE_ATTRIBUTE_COMPRESSED,    'C' },
-    { FILE_ATTRIBUTE_OFFLINE,       'O' },
-    { FILE_ATTRIBUTE_NONINDEXED,    'I' },
-    { FILE_ATTRIBUTE_ENCRYPTED,     'E' },
-    { FILE_ATTRIBUTE_INTEGRITY,     'V' },
+    { FILE_ATTRIBUTE_READONLY,      'R', "Read-only file" },
+    { FILE_ATTRIBUTE_HIDDEN,        'H', "Hidden from directory listing" },
+    { FILE_ATTRIBUTE_SYSTEM,        'S', "System file or directory" },
+    { FILE_ATTRIBUTE_VOLUME,        'v', "Volume (reserved)" },
+    { FILE_ATTRIBUTE_DIRECTORY,     'D', "Directory" },
+    { FILE_ATTRIBUTE_ARCHIVE,       'A', "Archive" },
+    { FILE_ATTRIBUTE_DEVICE,        'd', "Device (reserved)" },
+    { FILE_ATTRIBUTE_NORMAL,        'N', "Normal" },
+    { FILE_ATTRIBUTE_TEMPORARY,     'T', "Temporary" },
+    { FILE_ATTRIBUTE_SPARSE,        's', "Sparse File (reserved)" },
+    { FILE_ATTRIBUTE_REPARSE_POINT, 'L', "Reparse Point" },
+    { FILE_ATTRIBUTE_COMPRESSED,    'C', "Compressed" },
+    { FILE_ATTRIBUTE_OFFLINE,       'O', "Offline" },
+    { FILE_ATTRIBUTE_NONINDEXED,    'I', "Non-Indexed" },
+    { FILE_ATTRIBUTE_ENCRYPTED,     'E', "Encrypted" },
+    { FILE_ATTRIBUTE_INTEGRITY,     'V', "Integrity" },
     { 0, 0 },
 };
 
@@ -144,7 +145,8 @@ attrib2str(uint16_t a) {
     for (i = 0; attribs[i].a; i++)
 	if (attribs[i].a & a)
 	    *bp++ = attribs[i].c;
-    
+
+    *bp = '\0';
     return buf;
 }
 
@@ -690,99 +692,79 @@ walker(const char *path,
     return 0;
 }
 
+void
+usage(void) {
+    int i;
+    
+    printf("Usage:\n\t%s [options] [+|-|=]<flags>]* <path-1> [.. <path-N>]\n",
+	   argv0);
+    printf("\nOptions:\n");
+    printf("\t-h\tDisplay this information\n");
+    printf("\t-n\tNo update (dry-run)\n");
+    printf("\t-v\tIncrease verbosity\n");
+    printf("\t-r\tRecurse\n");
+    printf("\t-\tStop parsing options/flags\n");
+    printf("\nFlags:\n");
+    for (i = 0; attribs[i].a; i++)
+	printf("\t%c\t%s\n", attribs[i].c, attribs[i].d);
+}
+
+    
 int
 main(int argc,
      char *argv[]) {
     int i, j, rc = 0;
-    char *ap = NULL;
     uint16_t a;
 
     argv0 = argv[0];
     
-    for (i = 1; i < argc && argv[i][0] == '-'; i++) {
-	for (j = 1; argv[i][j]; j++)
-	    switch (argv[i][j]) {
-	    case 'h':
-		printf("Usage:\n\t%s [-hvrn] [-A<attribs>] [-U<attribs>] <path-1> [.. <path-N>]\n",
-		       argv[0]);
-		exit(0);
-	    case 'v':
-		f_verbose++;
-		break;
-	    case 'r':
-		f_recurse++;
-		break;
-	    case 'n':
-		f_update = 0;
-		break;
-		
-	    case 'S':
-		if (argv[i][j+1])
-		    rc = str2attrib(&a, ap = argv[i]+j+1);
-		else if (i+1 < argc)
-		    rc = str2attrib(&a, ap = argv[++i]);
-		else
-		    rc = 0;
-		if (rc == 0) {
-		    fprintf(stderr, "%s: Error: -S: Missing argument\n",
-			    argv[0]);
-		    exit (1);
-		} else if (rc < 0) {
-		    fprintf(stderr, "%s: Error: %s: Invalid argument for -S\n",
-			    argv[0], ap);
-		    exit (1);
-		}
-		f_searchattribs |= a;
-		goto NextArg;
-		
-	    case 'A':
-		if (argv[i][j+1])
-		    rc = str2attrib(&a, ap = argv[i]+j+1);
-		else if (i+1 < argc)
-		    rc = str2attrib(&a, ap = argv[++i]);
-		else
-		    rc = 0;
-		if (rc == 0) {
-		    fprintf(stderr, "%s: Error: -A: Missing argument\n",
-			    argv[0]);
-		    exit (1);
-		} else if (rc < 0) {
-		    fprintf(stderr, "%s: Error: %s: Invalid argument for -A\n",
-			    argv[0], ap);
-		    exit (1);
-		}
-		f_orattribs |= a;
-		goto NextArg;
-		
-	    case 'U':
-		if (argv[i][j+1])
-		    rc = str2attrib(&a, ap = argv[i]+j+1);
-		else if (i+1 < argc)
-		    rc = str2attrib(&a, ap = argv[++i]);
-		else
-		    rc = 0;
-		if (rc == 0) {
-		    fprintf(stderr, "%s: Error: -U: Missing argument\n",
-			    argv[0]);
-		    exit (1);
-		} else if (rc < 0) {
-		    fprintf(stderr, "%s: Error: %s: Invalid argument for -U\n",
-			    argv[0], ap);
-		    exit (1);
-		}
+    for (i = 1; i < argc && (argv[i][0] == '-' || argv[i][0] == '+' || argv[i][0] == '='); i++) {
+	switch (argv[i][0]) {
+	case '+':
+	    rc = str2attrib(&a, argv[i]+1);
+	    f_orattribs |= a;
+	    break;
+	    
+	case '=':
+	    a = 0;
+	    rc = str2attrib(&a, argv[i]+1);
+	    f_orattribs = a;
+	    f_andattribs = 0xFFFF;
+	    break;
+	    
+	case '-':
+	    a = 0;
+	    rc = str2attrib(&a, argv[i]+1);
+	    if (rc > 0) {
 		f_andattribs &= ~a;
-		goto NextArg;
-
-	    case '-':
-		++i;
-		goto EndArg;
-		
-	    default:
-		fprintf(stderr, "%s: Error: -%c: Invalid switch\n",
-			argv[0], argv[i][j]);
-		exit(1);
+		break;
 	    }
-    NextArg:;
+	    
+	    for (j = 1; argv[i][j]; j++)
+		switch (argv[i][j]) {
+		case 'h':
+		    usage();
+		    exit(0);
+		case 'v':
+		    f_verbose++;
+		    break;
+		case 'r':
+		    f_recurse++;
+		    break;
+		case 'n':
+		    f_update = 0;
+		    break;
+		    
+		case '-':
+		    ++i;
+		    goto EndArg;
+		    
+		default:
+		    fprintf(stderr, "%s: Error: -%c: Invalid switch\n",
+			    argv[0], argv[i][j]);
+		    exit(1);
+		}
+	}
     }
  EndArg:;
     
