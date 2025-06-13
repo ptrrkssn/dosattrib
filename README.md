@@ -1,0 +1,2 @@
+# dosattrib
+A tool to work with Samba DOSATTRIB extended attributes directly on the filesystem
