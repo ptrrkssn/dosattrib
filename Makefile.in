@@ -122,3 +122,8 @@ $(PACKAGE)-$(VERSION).tar.gz: dosattrib
 	@echo ""
 	@echo "*** $(PACKAGE)-$(VERSION).tar.gz created"
 
+check:
+	@echo OK
+
+distcheck:
+	@echo OK
