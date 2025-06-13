@@ -34,7 +34,7 @@
 
 #include "config.h"
 
-#define _XOPEN_SOURCE 500
+#define _XOPEN_SOURCE 800
 
 #include <stdio.h>
 #include <time.h>
@@ -661,7 +661,7 @@ walker(const char *path,
 	    
 	    if (f_update) {
 #if defined(HAVE_EXTATTR_SET_LINK) /* FreeBSD */
-		wlen = extattr_set_link(path, EXTATTR_NAMESPACE_USER, DOSATTRIBNAME, nblob, nlen);
+		len = extattr_set_link(path, EXTATTR_NAMESPACE_USER, DOSATTRIBNAME, nblob, nlen);
 #elif defined(HAVE_LGETXATTR) /* Linux */
 		len = lsetxattr(path, DOSATTRIBNAME, oblob, sizeof(oblob), 0);
 #elif defined(HAVE_GETXATTR) /* MacOS */
