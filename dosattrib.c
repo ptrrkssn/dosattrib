@@ -34,6 +34,8 @@
 
 #include "config.h"
 
+#define _XOPEN_SOURCE 500
+
 #include <stdio.h>
 #include <time.h>
 #include <ctype.h>
@@ -675,12 +677,10 @@ walker(const char *path,
 	    }
 	    
 	    if (f_update) {
-		ssize_t wlen;
-		
 #if defined(HAVE_EXTATTR_SET_LINK) /* FreeBSD */
 		wlen = extattr_set_link(path, EXTATTR_NAMESPACE_USER, DOSATTRIBNAME, nblob, nlen);
 #elif defined(HAVE_LGETXATTR) /* Linux */
-		len = lsetxattr(path, DOSATTRIBNAME, oblob, sizeof(oblob));
+		len = lsetxattr(path, DOSATTRIBNAME, oblob, sizeof(oblob), 0);
 #elif defined(HAVE_GETXATTR) /* MacOS */
 		len = setxattr(path, DOSATTRIBNAME, oblob, sizeof(oblob), 0, XATTR_NOFOLLOW);
 #elif defined(HAVE_ATTROPEN) /* Solaris */
@@ -693,7 +693,7 @@ walker(const char *path,
 		errno = ENOSYS;
 		wlen = -1;
 #endif
-		if (wlen == nlen)
+		if (len == nlen)
 		    printf(": Updated");
 		else
 		    printf(": Update Failed: %s", strerror(errno));
