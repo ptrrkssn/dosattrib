@@ -61,7 +61,9 @@
 
 int f_update = 1;
 int f_verbose = 0;
+int f_print = 0;
 int f_recurse = 0;
+int f_autofix = 0;
 
 uint16_t f_andattribs = 0xFFFF;
 uint16_t f_orattribs = 0;
@@ -523,6 +525,22 @@ create_dosattrib(DOSATTRIB *da,
     return bp-buf;
 }
 
+char *
+nttime2str(uint64_t nt) {
+    time_t bt;
+    struct tm *tp;
+    static char buf[256];
+    
+    nt -= 11644473600;
+    nt /= 10,000,000;
+
+    bt = nt;
+    tp = localtime(&bt);
+
+    strftime(buf, sizeof(buf), "%Y-%m-%d %T", tp);
+    return buf;
+}
+
 
 int
 walker(const char *path,
@@ -622,6 +640,24 @@ walker(const char *path,
 	if (f_verbose > 1)
 	    printf(" (0x%02x)", oa);
 	if (f_verbose > 2) {
+	    printf(": v%d", version);
+	    switch (version) {
+	    case 3:
+		printf(", valid_flags=0x%02x, create_time=%s",
+		       da.dosinfo_3.valid_flags, nttime2str(da.dosinfo_3.create_time));
+		break;
+	    case 4:
+		printf(", valid_flags=0x%02x, create_time=%s",
+		       da.dosinfo_4.valid_flags, nttime2str(da.dosinfo_4.create_time));
+		break;
+	    case 5:
+		printf(", valid_flags=0x%02x, create_time=%s",
+		       da.dosinfo_5.valid_flags, nttime2str(da.dosinfo_5.create_time));
+		break;
+	    }
+	}
+	
+	if (f_print > 2) {
 	    int i;
 	    
 	    putchar(':');
@@ -722,12 +758,20 @@ main(int argc,
 	switch (argv[i][0]) {
 	case '+':
 	    rc = str2attrib(&a, argv[i]+1);
+	    if (rc < 1) {
+		fprintf(stderr, "%s: Error: %s: Invalid attributes\n", argv[0], argv[i]+1);
+		exit(1);
+	    }
 	    f_orattribs |= a;
 	    break;
 	    
 	case '=':
 	    a = 0;
 	    rc = str2attrib(&a, argv[i]+1);
+	    if (rc < 1) {
+		fprintf(stderr, "%s: Error: %s: Invalid attributes\n", argv[0], argv[i]+1);
+		exit(1);
+	    }
 	    f_orattribs = a;
 	    f_andattribs = 0xFFFF;
 	    break;
@@ -748,13 +792,30 @@ main(int argc,
 		case 'v':
 		    f_verbose++;
 		    break;
+		case 'p':
+		    f_print++;
+		    break;
 		case 'r':
 		    f_recurse++;
 		    break;
 		case 'n':
 		    f_update = 0;
 		    break;
-		    
+		case 'a':
+		    f_autofix++;
+		    break;
+		case 'm':
+		    if (argv[i][j+1])
+			rc = str2attrib(&f_searchattribs, argv[i]+j+1);
+		    else if (i+1 < argc)
+			rc = str2attrib(&f_searchattribs, argv[++i]);
+		    else
+			rc = -1;
+		    if (rc < 1) {
+			fprintf(stderr, "%s: Error: Missing argument for '-m'\n", argv[0]);
+			exit(1);
+		    }
+		    goto NextArg;
 		case '-':
 		    ++i;
 		    goto EndArg;
@@ -765,6 +826,7 @@ main(int argc,
 		    exit(1);
 		}
 	}
+    NextArg:;
     }
  EndArg:;
     
