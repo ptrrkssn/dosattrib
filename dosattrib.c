@@ -64,7 +64,7 @@ int f_verbose = 0;
 int f_ignore = 0;
 int f_print = 0;
 int f_recurse = 0;
-int f_autofix = 0;
+int f_all = 0;
 
 uint16_t f_andattribs = 0xFFFF;
 uint16_t f_orattribs = 0;
@@ -123,10 +123,10 @@ str2attrib(uint16_t *ap,
 	   char *s) {
     uint16_t a = 0;
     int i;
-    
+
     if (!s || !*s)
 	return 0;
-    
+
     for (; *s; ++s) {
 	for (i = 0; attribs[i].a && attribs[i].c != *s; i++)
 	    ;
@@ -134,7 +134,7 @@ str2attrib(uint16_t *ap,
 	    return -1;
 	a |= attribs[i].a;
     }
-    
+
     *ap = a;
     return 1;
 }
@@ -143,7 +143,7 @@ char *
 attrib2str(uint16_t a) {
     static char buf[64], *bp;
     int i;
-	
+
     bp = buf;
     for (i = 0; attribs[i].a; i++)
 	if (attribs[i].a & a)
@@ -210,7 +210,7 @@ typedef union {
 /*
   # Fails:
   # Documents    [32] 00 00 04 00 04 00 00 00 51 00 00 00 11 00 00 00 9e 55 d7 72 85 12 d8 01 9e 55 d7 72 85 12 d8 01
-  #  
+  #
   # Works:
   # ThisOneWorks [24] 00 00 05 00 05 00 00 00 11 00 00 00 10 00 00 00 da a0 fc 93 fc ce db 01
   # Desktop      [24] 00 00 05 00 05 00 00 00 11 00 00 00 30 00 00 00 c0 b7 36 87 73 1d d3 01
@@ -236,7 +236,7 @@ get_uint16(uint16_t *vp,
 	   unsigned char **bp,
 	   ssize_t *bs) {
     int i;
-  
+
     if (*bs < 2)
 	return -1;
     if (!*bs)
@@ -257,7 +257,7 @@ get_uint32(uint32_t *vp,
 	   unsigned char **bp,
 	   ssize_t *bs) {
     int i;
-  
+
     if (*bs < 4)
 	return -1;
     if (!*bs)
@@ -277,7 +277,7 @@ get_uint64(uint64_t *vp,
 	   unsigned char **bp,
 	   ssize_t *bs) {
     int i;
-  
+
     if (*bs < 8)
 	return -1;
     if (!*bs)
@@ -297,7 +297,7 @@ put_uint16(uint16_t v,
 	   unsigned char **bp,
 	   size_t *bs) {
     int i;
-  
+
     if (*bs < 2)
 	return -1;
 
@@ -315,7 +315,7 @@ put_uint32(uint32_t v,
 	   unsigned char **bp,
 	   size_t *bs) {
     int i;
-  
+
     if (*bs < 4)
 	return -1;
 
@@ -333,7 +333,7 @@ put_uint64(uint64_t v,
 	   unsigned char **bp,
 	   size_t *bs) {
     int i;
-  
+
     if (*bs < 8)
 	return -1;
 
@@ -365,7 +365,7 @@ parse_dosattrib(DOSATTRIB *da,
 	    --bs;
 	}
     }
-  
+
     if (bs > 0 && bp[0] == '\0') {
 	++bp;
 	--bs;
@@ -376,7 +376,7 @@ parse_dosattrib(DOSATTRIB *da,
     }
     if (!bs)
 	return 0;
-  
+
     if (bs < 2)
 	return -2;
 
@@ -407,7 +407,7 @@ parse_dosattrib(DOSATTRIB *da,
     */
 
     get_uint16(&version, &bp, &bs);
-  
+
     switch (version) {
     case 1:
 	get_uint32(&da->dosinfo_1.switch_version, &bp, &bs);
@@ -466,7 +466,7 @@ put_hex(unsigned char **bp,
 	uint64_t v,
 	size_t vs) {
     int i;
-    
+
     if (*bs < 5)
 	return -1;
 
@@ -475,13 +475,13 @@ put_hex(unsigned char **bp,
 
     for (i = vs-1; i >= 0; i--) {
 	unsigned char c = (v&0xF);
-	
+
 	(*bp)[i] = (c > 0xA ? c-0xA+'A' : c+'0');
     }
     (*bp) += vs;
     *(*bp) = '\0';
     *bs -= 3+vs;
-    
+
     return 0;
 }
 
@@ -491,7 +491,7 @@ create_dosattrib(DOSATTRIB *da,
 		 unsigned char *buf,
 		 size_t bs) {
     unsigned char *bp = buf;
-    
+
     switch (version) {
     case 2:
 	put_hex(&bp, &bs, da->dosinfo_2.attrib, sizeof(da->dosinfo_2.attrib));
@@ -500,17 +500,17 @@ create_dosattrib(DOSATTRIB *da,
 	put_hex(&bp, &bs, da->dosinfo_3.attrib, sizeof(da->dosinfo_3.attrib));
 	break;
     }
-    
+
     if (bs < 1)
 	return -1;
-    
+
     *bp++ = '\0';
     bs--;
     *bp++ = '\0';
     bs--;
-    
+
     put_uint16(version, &bp, &bs);
-  
+
     switch (version) {
     case 1:
 	put_uint32(da->dosinfo_1.switch_version, &bp, &bs);
@@ -566,16 +566,39 @@ create_dosattrib(DOSATTRIB *da,
     return bp-buf;
 }
 
+time_t
+nttime2time(uint64_t nt) {
+    time_t bt;
+
+    nt /= 10000000;
+
+    if (nt < 11644473600)
+        return 0; /* Before 1970-01-01... */
+
+    nt -= 11644473600;
+
+    bt = nt;
+    return bt;
+}
+
+uint64_t
+time2nttime(time_t bt) {
+    uint64_t nt;
+
+    nt = bt;
+    nt += 11644473600;
+    nt *= 10000000;
+
+    return nt;
+}
+
 char *
 nttime2str(uint64_t nt) {
     time_t bt;
     struct tm *tp;
     static char buf[256];
 
-    nt /= 10000000;
-    nt -= 11644473600;
-
-    bt = nt;
+    bt = nttime2time(nt);
     tp = localtime(&bt);
 
     strftime(buf, sizeof(buf), "%Y-%m-%d %T", tp);
@@ -597,7 +620,7 @@ walker(const char *path,
 #if defined(HAVE_ATTROPEN)
     int fd;
 #endif
-    
+
 
     switch (type) {
     case FTW_DNR:
@@ -612,11 +635,11 @@ walker(const char *path,
 		argv0, path);
 	return -1;
     }
-    
+
     spin();
 
     memset(oblob, 0, sizeof(oblob));
-    
+
     memset(&da, 0, sizeof(da));
 #if defined(HAVE_EXTATTR_GET_LINK)
     /* FreeBSD */
@@ -639,12 +662,22 @@ walker(const char *path,
     errno = ENOSYS;
     return -1;
 #endif
-    if (len < 0)
-	return 0;
+    if (len < 0) {
+        /* No such attribute */
+
+        if (!f_all)
+            return 0; /* Skip */
+
+        /* Let's generate a synthetic attribute */
+        da.dosinfo_5.switch_version = version = 5;
+        da.dosinfo_5.valid_flags = 0x51;
+        da.dosinfo_5.attrib = 0x00;
+        da.dosinfo_5.create_time = 0;
+    }
 
     rlen = 0;
     version = parse_dosattrib(&da, oblob, len, &rlen);
-    
+
     switch (version) {
     case 1:
 	oa = da.dosinfo_1.attrib;
@@ -671,7 +704,7 @@ walker(const char *path,
 	na |= f_orattribs;
     if (f_andattribs != 0xFFFF)
 	na &= f_andattribs;
-    
+
     /* Sanity check real type vs attribute type */
     if ((type == FTW_D || type == FTW_DP) &&
 	(na & FILE_ATTRIBUTE_DIRECTORY) == 0) {
@@ -683,10 +716,10 @@ walker(const char *path,
 
     if (f_matchattribs && (f_matchattribs & oa) == 0)
         return 0;
-    
+
     if (f_verbose || na != oa || (f_matchattribs & oa) != 0) {
 	printf("%s: %s", path, attrib2str(oa));
-    
+
 	if (f_verbose > 1)
 	    printf(" (0x%02x)", oa);
 	if (f_verbose > 2) {
@@ -707,16 +740,16 @@ walker(const char *path,
 		break;
 	    }
 	}
-	
+
 	if (f_print) {
 	    int i;
-	    
+
 	    putchar(':');
 	    for (i = 0; i < len; i++)
 		printf(" %02x", oblob[i]);
 	}
-	
-	
+
+
 	if (na != oa) {
 	    printf(" -> %s", attrib2str(na));
 	    if (f_verbose > 1)
@@ -743,11 +776,11 @@ walker(const char *path,
 	    nlen = create_dosattrib(&da, version, nblob, sizeof(nblob));
 	    if (f_verbose > 2) {
 		int i;
-		
+
 		for (i = 0; i < nlen; i++)
 		    printf(" %02x", nblob[i]);
 	    }
-	    
+
 	    if (f_update) {
 #if defined(HAVE_EXTATTR_SET_LINK) /* FreeBSD */
 		len = extattr_set_link(path, EXTATTR_NAMESPACE_USER, DOSATTRIBNAME, nblob, nlen);
@@ -773,7 +806,7 @@ walker(const char *path,
 		printf(": (NOT) Updated");
 	    }
 	}
-	
+
 	putchar('\n');
     }
     return 0;
@@ -782,7 +815,7 @@ walker(const char *path,
 void
 usage(void) {
     int i;
-    
+
     printf("Usage:\n  %s [<options>] [+|-|=]<flags>]* <path-1> [.. <path-N>]\n",
 	   argv0);
     printf("\nOptions:\n");
@@ -797,7 +830,7 @@ usage(void) {
 	printf("  %c           %s\n", attribs[i].c, attribs[i].d);
 }
 
-    
+
 int
 main(int argc,
      char *argv[]) {
@@ -805,7 +838,7 @@ main(int argc,
     uint16_t a;
 
     argv0 = argv[0];
-    
+
     for (i = 1; i < argc && (argv[i][0] == '-' || argv[i][0] == '+' || argv[i][0] == '='); i++) {
 	switch (argv[i][0]) {
 	case '+':
@@ -816,7 +849,7 @@ main(int argc,
 	    }
 	    f_orattribs |= a;
 	    break;
-	    
+
 	case '=':
 	    a = 0;
 	    rc = str2attrib(&a, argv[i]+1);
@@ -827,7 +860,7 @@ main(int argc,
 	    f_orattribs = a;
 	    f_andattribs = 0xFFFF;
 	    break;
-	    
+
 	case '-':
 	    a = 0;
 	    rc = str2attrib(&a, argv[i]+1);
@@ -835,7 +868,7 @@ main(int argc,
 		f_andattribs &= ~a;
 		break;
 	    }
-	    
+
 	    for (j = 1; argv[i][j]; j++)
 		switch (argv[i][j]) {
 		case 'h':
@@ -857,9 +890,9 @@ main(int argc,
 		    f_update = 0;
 		    break;
 		case 'a':
-		    f_autofix++;
+		    f_all++;
 		    break;
-                    
+
 		case 'm':
 		    if (argv[i][j+1])
 			rc = str2attrib(&f_matchattribs, argv[i]+j+1);
@@ -876,7 +909,7 @@ main(int argc,
 		case '-':
 		    ++i;
 		    goto EndArg;
-		    
+
 		default:
 		    fprintf(stderr, "%s: Error: -%c: Invalid switch\n",
 			    argv[0], argv[i][j]);
@@ -886,7 +919,7 @@ main(int argc,
     NextArg:;
     }
  EndArg:;
-    
+
     for (; i < argc; i++)
 	if (f_recurse) {
 	    rc = nftw(argv[i], walker, 9999, FTW_PHYS);
@@ -895,7 +928,7 @@ main(int argc,
 	} else {
 	    struct stat sb;
 	    struct FTW ftw;
-	    
+
 	    rc = lstat(argv[i], &sb);
 	    if (rc < 0)
 		goto Fail;
