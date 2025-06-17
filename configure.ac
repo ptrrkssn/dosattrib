@@ -1,5 +1,5 @@
 AC_PREREQ([2.71])
-AC_INIT([dosattrib],[1.0],[pen@lysator.liu.se],[p4ping],[https://github.com/ptrrkssn/dosattrib])
+AC_INIT([dosattrib],[1.0],[pen@lysator.liu.se],[dosattrib],[https://github.com/ptrrkssn/dosattrib])
 AC_CONFIG_AUX_DIR([build-aux])
 
 AC_CONFIG_SRCDIR([dosattrib.c])

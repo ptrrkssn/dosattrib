@@ -20,6 +20,9 @@ TMPINSTDIR =	/var/tmp/pkg-build-$(PACKAGE)
 TMPDESTDIR =	$(TMPINSTDIR)/root
 TMPPKGDIR =	$(TMPINSTDIR)/pkg
 
+# DEB
+DEBTMPDIR =     /var/tmp/deb-pkg-root
+
 # RPM
 RPMBUILDDIR =	/root/rpmbuild
 RPMSPECSDIR =	$(RPMBUILDDIR)/SPECS
@@ -51,15 +54,16 @@ all:
 
 ## FreeBSD Ports package:
 
-port: Makefile.port pkg-descr pkg-plist port-install-dist
+port: Makefile.port pkg-descr port-install-dist
 	$(INSTALL) -d "$(PORTSDIR)/$(PORTSNAME)"
 	cp Makefile.port "$(PORTSDIR)/$(PORTSNAME)/Makefile"
-	cp pkg-descr pkg-plist "$(PORTSDIR)/$(PORTSNAME)"
+	cp pkg-descr "$(PORTSDIR)/$(PORTSNAME)"
 	(cd "$(PORTSDIR)/$(PORTSNAME)" && \
 	  make clean && \
 	  make makesum && portlint -AC && \
+	  git add -A && \
 	  make package)
-	cp "$(PORTSDIR)/$(PORTSNAME)/work/pkg/$(PACKAGE)-$(VERSION).txz" .
+	cp "$(PORTSDIR)/$(PORTSNAME)/work/pkg/$(PACKAGE)-$(VERSION).pkg" .
 
 port-test:
 	(cd "$(PORTSDIR)/$(PORTSNAME)" && port test "$(PORTSDIR)/$(PORTSNAME)")
@@ -112,10 +116,11 @@ svr-install: svr
 deb debian ubuntu: deb-build
 
 deb-build: control
-	cp control deb/DEBIAN
-	cp ../dosattrib deb/usr/bin
-	cp ../dosattrib.man deb/usr/share/man/man1/dosattrib.1 && gzip deb/usr/share/man/man1/dosattrib.1
-	chown -R root:root deb && dpkg -b deb && mv deb.deb dosattrib.deb
+	rm -fr "$(DEBTMPDIR)" ; mkdir -p "$(DEBTMPDIR)"
+	cp -r deb "$(DEBTMPDIR)"
+	cp ../dosattrib "$(DEBTMPDIR)/usr/bin"
+	cp ../dosattrib.man "$(DEBTMPDIR)/usr/share/man/man1/dosattrib.1" && gzip "$(DEBTMPDIR)/usr/share/man/man1/dosattrib.1"
+	chown -R root:root "$(DEBTMPDIR)" && dpkg -b "$(DEBTMPDIR)" && mv deb.deb dosattrib.deb
 
 ## CentOS/RedHat RPM package:
 
@@ -175,7 +180,7 @@ omnios-clean:
 maintainer-clean:	distclean
 
 distclean:		clean
-	rm -f Makefile Makefile.port *.pkg pkginfo *.rb *.rpm *.spec pkg-descr build.sh *.txz
+	rm -f Makefile Makefile.port *.pkg pkginfo *.rb *.rpm *.deb *.spec pkg-descr build.sh *.txz
 	rm -fr "$(TMPINSTDIR)"
 
 clean mostlyclean:

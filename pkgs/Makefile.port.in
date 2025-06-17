@@ -1,4 +1,4 @@
-# $FreeBSD$
+# FreeBSD Ports Makefile for @PACKAGE_NAME@
 
 PORTNAME=		@PACKAGE_TARNAME@
 DISTVERSIONPREFIX=	v
@@ -7,6 +7,7 @@ CATEGORIES=		sysutils security
 
 MAINTAINER=		@PACKAGE_BUGREPORT@
 COMMENT=		Samba DOSATTRIBs manipulation tool
+WWW=			@PACKAGE_URL@
 
 LICENSE=		BSD3CLAUSE
 LICENSE_FILE=		${WRKSRC}/LICENSE
@@ -16,5 +17,7 @@ GH_ACCOUNT=		ptrrkssn
 
 GNU_CONFIGURE=		yes
 INSTALL_TARGET=		install-strip
+
+PLIST_FILES=		bin/dosattrib share/man/man1/dosattrib.1.gz
 
 .include <bsd.port.mk>

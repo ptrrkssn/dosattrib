@@ -98,7 +98,7 @@ install-man:  dosattrib.man
 	$(INSTALL) -d "$(DESTDIR)$(MAN1DIR)"
 	$(INSTALL) -m 644 dosattrib.man "$(DESTDIR)$(MAN1DIR)/dosattrib.1"
 	if test -f /usr/share/man/man1/cat.1.gz; then \
-		gzip -f "$(DESTDIR)$(MAN1DIR)/dosattrib.1" && \
+		gzip -f "$(DESTDIR)$(MAN1DIR)/dosattrib.1"; \
 	fi
 
 uninstall:
