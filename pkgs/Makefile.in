@@ -21,7 +21,7 @@ TMPDESTDIR =	$(TMPINSTDIR)/root
 TMPPKGDIR =	$(TMPINSTDIR)/pkg
 
 # DEB
-DEBTMPDIR =     /var/tmp/deb-pkg-root
+DEBTMPDIR =     /var/tmp/deb-tmp/dosattrib
 
 # RPM
 RPMBUILDDIR =	/root/rpmbuild
@@ -117,10 +117,10 @@ deb debian ubuntu: deb-build
 
 deb-build: control
 	rm -fr "$(DEBTMPDIR)" ; mkdir -p "$(DEBTMPDIR)"
-	cp -r deb "$(DEBTMPDIR)"
+	cp -r deb/* "$(DEBTMPDIR)"
 	cp ../dosattrib "$(DEBTMPDIR)/usr/bin"
 	cp ../dosattrib.man "$(DEBTMPDIR)/usr/share/man/man1/dosattrib.1" && gzip "$(DEBTMPDIR)/usr/share/man/man1/dosattrib.1"
-	chown -R root:root "$(DEBTMPDIR)" && dpkg -b "$(DEBTMPDIR)" && mv deb.deb dosattrib.deb
+	chown -R root:root "$(DEBTMPDIR)" && dpkg -b "$(DEBTMPDIR)"
 
 ## CentOS/RedHat RPM package:
 
