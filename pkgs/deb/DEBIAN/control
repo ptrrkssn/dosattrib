@@ -1,0 +1,6 @@
+Package: dosattrib
+Version: 1.0
+Architecture: all
+Maintainer: Peter Eriksson, Lysator ACS pen@lysator.liu.se
+Homepage: https://github.com/ptrrkssn/dosattrib
+Description: This is a tool to manage Samba DOSATTRIBs

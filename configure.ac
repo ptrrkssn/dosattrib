@@ -28,5 +28,5 @@ AC_FUNC_REALLOC
 AC_CHECK_FUNCS([strdup strerror])
 AC_CHECK_FUNCS([extattr_get_link lgetxattr getxattr extattr_set_link lsetxattr setxattr extattr_delete_link removexattr attropen])
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile pkgs/Makefile pkgs/Makefile.port pkgs/dosattrib.rb pkgs/pkginfo pkgs/dosattrib.spec pkgs/pkg-descr pkgs/build.sh pkgs/control])
 AC_OUTPUT

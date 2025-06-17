@@ -1,0 +1,37 @@
+.\" Manual page for dosattrib
+.\" Contact pen@lysator.liu.se to correct errors or typos.
+.TH dosattrib 1 "16 Jun 2025" "1.0" "dosattrib man page"
+
+.SH NAME
+dosattrib \- display and/or manipulate Samba DOSATTRIB
+
+.SH SYNOPSIS
+.B dosattrib
+.RI "[" "<option>*" "]"
+.RI "[" "<flag>*" "]"
+.RI "[" "<path>*" "]" "" "]"
+
+.SH DESCRIPTION
+.B dosattrib
+is a tool to manipulate Samba DOS Attributes.
+
+.SH SEE ALSO
+.TP
+.B BSD
+lsextattr(1), getextattr(1), setextattr(1)
+.TP
+.B Linux
+attr(1), getfattr(1), setfattr(1)
+.TP
+.B MacOS
+xattr(1)
+
+
+.SH BUGS
+No known bugs
+
+.SH SOURCE
+https://github.com/ptrrkssn/dosattrib
+
+.SH AUTHOR
+Peter Eriksson <pen@lysator.liu.se>

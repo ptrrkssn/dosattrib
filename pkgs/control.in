@@ -1,0 +1,6 @@
+Package: @PACKAGE_NAME@
+Version: @PACKAGE_VERSION@
+Architecture: all
+Maintainer: Peter Eriksson, Lysator ACS @PACKAGE_BUGREPORT@
+Homepage: @PACKAGE_URL@
+Description: This is a tool to manage Samba DOSATTRIBs
