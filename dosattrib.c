@@ -60,11 +60,15 @@
 #endif
 
 int f_update = 1;
+int f_debug = 0;
 int f_verbose = 0;
+int f_force = 0;
+int f_version = 0;
 int f_ignore = 0;
 int f_print = 0;
 int f_recurse = 0;
 int f_all = 0;
+int f_repair = 0;
 
 uint16_t f_andattribs = 0xFFFF;
 uint16_t f_orattribs = 0;
@@ -153,68 +157,27 @@ attrib2str(uint16_t a) {
     return buf;
 }
 
-#define XATTR_DOSINFO_ATTRIB       0x00000001
-#define	XATTR_DOSINFO_EA_SIZE      0x00000002
-#define	XATTR_DOSINFO_SIZE         0x00000004
-#define	XATTR_DOSINFO_ALLOC_SIZE   0x00000008
-#define	XATTR_DOSINFO_CREATE_TIME  0x00000010
-#define	XATTR_DOSINFO_CHANGE_TIME  0x00000020
-#define	XATTR_DOSINFO_ITIME        0x00000040
+#define DOSATTRIB_VALID_ATTRIB       0x00000001
+#define	DOSATTRIB_VALID_EA_SIZE      0x00000002
+#define	DOSATTRIB_VALID_SIZE         0x00000004
+#define	DOSATTRIB_VALID_ALLOC_SIZE   0x00000008
+#define	DOSATTRIB_VALID_CREATE_TIME  0x00000010
+#define	DOSATTRIB_VALID_CHANGE_TIME  0x00000020
+#define	DOSATTRIB_VALID_ITIME        0x00000040
 
-typedef union {
-    struct {
-	uint32_t switch_version;
-	uint32_t attrib;
-	uint32_t ea_size;
-	uint64_t size;
-	uint64_t alloc_size;
-    	uint64_t create_time;
-	uint64_t change_time;
-    } dosinfo_1; /* 40 bytes */
-    struct {
-	uint32_t switch_version;
-	uint32_t flags;
-	uint32_t attrib;
-	uint32_t ea_size;
-	uint64_t size;
-	uint64_t alloc_size;
-	uint64_t create_time;
-	uint64_t change_time;
-	uint64_t write_time;
-    } dosinfo_2; /* 50 bytes */
-    struct {
-	uint32_t switch_version;
-	uint32_t valid_flags;
-	uint32_t attrib;
-	uint32_t ea_size;
-	uint64_t size;
-	uint64_t alloc_size;
-	uint64_t create_time;
-	uint64_t change_time;
-    } dosinfo_3; /* 44 bytes */
-    struct {
-	uint32_t switch_version;
-	uint32_t valid_flags;
-	uint32_t attrib;
-	uint64_t itime;
-	uint64_t create_time;
-    } dosinfo_4; /* 26 bytes */
-    struct {
-	uint32_t switch_version;
-	uint32_t valid_flags;
-	uint32_t attrib;
-	uint64_t create_time;
-    } dosinfo_5; /* 18 bytes */
+typedef struct {
+    uint32_t version;
+    uint32_t valid_flags;
+    uint32_t attribs;
+    uint32_t ea_size;
+    uint64_t size;
+    uint64_t alloc_size;
+    uint64_t create_time;
+    uint64_t change_time;
+    uint64_t write_time;
+    uint64_t itime;
 } DOSATTRIB;
 
-/*
-  # Fails:
-  # Documents    [32] 00 00 04 00 04 00 00 00 51 00 00 00 11 00 00 00 9e 55 d7 72 85 12 d8 01 9e 55 d7 72 85 12 d8 01
-  #
-  # Works:
-  # ThisOneWorks [24] 00 00 05 00 05 00 00 00 11 00 00 00 10 00 00 00 da a0 fc 93 fc ce db 01
-  # Desktop      [24] 00 00 05 00 05 00 00 00 11 00 00 00 30 00 00 00 c0 b7 36 87 73 1d d3 01
-*/
 
 void
 spin(void) {
@@ -284,13 +247,17 @@ get_uint64(uint64_t *vp,
 	return 0;
     *vp = 0;
     for (i = 7; i >= 0; i--) {
+	uint8_t v;
+	
 	*vp <<= 8;
-	*vp |= (*bp)[i];
+	v = (*bp)[i];
+	*vp |= v;
     }
     (*bp) += 8;
     (*bs) -= 8;
     return 1;
 }
+
 
 int
 put_uint16(uint16_t v,
@@ -301,7 +268,7 @@ put_uint16(uint16_t v,
     if (*bs < 2)
 	return -1;
 
-    for (i = 1; i >= 0; i--) {
+    for (i = 0; i <= 1; i++) {
 	(*bp)[i] = v&0xFF;
 	v >>= 8;
     }
@@ -319,7 +286,7 @@ put_uint32(uint32_t v,
     if (*bs < 4)
 	return -1;
 
-    for (i = 3; i >= 0; i--) {
+    for (i = 0; i <= 3; i++) {
 	(*bp)[i] = v&0xFF;
 	v >>= 8;
     }
@@ -337,7 +304,7 @@ put_uint64(uint64_t v,
     if (*bs < 8)
 	return -1;
 
-    for (i = 7; i >= 0; i--) {
+    for (i = 0; i <= 7; i++) {
 	(*bp)[i] = v&0xFF;
 	v >>= 8;
     }
@@ -355,10 +322,13 @@ parse_dosattrib(DOSATTRIB *da,
 		size_t *rlen) {
     uint16_t version = 0;
 
+
+    memset(da, 0, sizeof(*da));
+    
     if (bs > 2 && bp[0] == '0' && bp[1] == 'x' && isxdigit(bp[2])) {
 	bp += 2;
 	bs -= 2;
-	if (sscanf((char *) bp, "%x", &da->dosinfo_2.attrib) != 1)
+	if (sscanf((char *) bp, "%x", &da->attribs) != 1)
 	    return -1;
 	while (bs > 0 && isxdigit(*bp)) {
 	    ++bp;
@@ -410,47 +380,58 @@ parse_dosattrib(DOSATTRIB *da,
 
     switch (version) {
     case 1:
-	get_uint32(&da->dosinfo_1.switch_version, &bp, &bs);
-	get_uint32(&da->dosinfo_1.attrib, &bp, &bs);
-	get_uint32(&da->dosinfo_1.ea_size, &bp, &bs);
-	get_uint64(&da->dosinfo_1.size, &bp, &bs);
-	get_uint64(&da->dosinfo_1.alloc_size, &bp, &bs);
-	get_uint64(&da->dosinfo_1.create_time, &bp, &bs);
-	get_uint64(&da->dosinfo_1.change_time, &bp, &bs);
+	get_uint32(&da->version, &bp, &bs);
+	get_uint32(&da->attribs, &bp, &bs);
+	da->valid_flags = DOSATTRIB_VALID_ATTRIB;
+	get_uint32(&da->ea_size, &bp, &bs);
+	if (da->ea_size != 0)
+	    da->valid_flags |= DOSATTRIB_VALID_EA_SIZE;
+	get_uint64(&da->size, &bp, &bs);
+	if (da->size != 0)
+	    da->valid_flags |= DOSATTRIB_VALID_SIZE;
+	get_uint64(&da->alloc_size, &bp, &bs);
+	if (da->alloc_size != 0)
+	    da->valid_flags |= DOSATTRIB_VALID_ALLOC_SIZE;
+	get_uint64(&da->create_time, &bp, &bs);
+	if (da->create_time != 0)
+	    da->valid_flags |= DOSATTRIB_VALID_CREATE_TIME;
+	get_uint64(&da->change_time, &bp, &bs);
+	if (da->change_time != 0)
+	    da->valid_flags |= DOSATTRIB_VALID_CHANGE_TIME;
 	break;
     case 2:
-	get_uint32(&da->dosinfo_2.switch_version, &bp, &bs);
-	get_uint32(&da->dosinfo_2.flags, &bp, &bs);
-	get_uint32(&da->dosinfo_2.attrib, &bp, &bs);
-	get_uint32(&da->dosinfo_2.ea_size, &bp, &bs);
-	get_uint64(&da->dosinfo_2.size, &bp, &bs);
-	get_uint64(&da->dosinfo_2.alloc_size, &bp, &bs);
-	get_uint64(&da->dosinfo_2.create_time, &bp, &bs);
-	get_uint64(&da->dosinfo_2.change_time, &bp, &bs);
-	get_uint64(&da->dosinfo_2.write_time, &bp, &bs);
+	get_uint32(&da->version, &bp, &bs);
+	get_uint32(&da->valid_flags, &bp, &bs);
+	get_uint32(&da->attribs, &bp, &bs);
+	get_uint32(&da->ea_size, &bp, &bs);
+	get_uint64(&da->size, &bp, &bs);
+	get_uint64(&da->alloc_size, &bp, &bs);
+	get_uint64(&da->create_time, &bp, &bs);
+	get_uint64(&da->change_time, &bp, &bs);
+	get_uint64(&da->write_time, &bp, &bs);
 	break;
     case 3:
-	get_uint32(&da->dosinfo_3.switch_version, &bp, &bs);
-	get_uint32(&da->dosinfo_3.valid_flags, &bp, &bs);
-	get_uint32(&da->dosinfo_3.attrib, &bp, &bs);
-	get_uint32(&da->dosinfo_3.ea_size, &bp, &bs);
-	get_uint64(&da->dosinfo_3.size, &bp, &bs);
-	get_uint64(&da->dosinfo_3.alloc_size, &bp, &bs);
-	get_uint64(&da->dosinfo_3.create_time, &bp, &bs);
-	get_uint64(&da->dosinfo_3.change_time, &bp, &bs);
+	get_uint32(&da->version, &bp, &bs);
+	get_uint32(&da->valid_flags, &bp, &bs);
+	get_uint32(&da->attribs, &bp, &bs);
+	get_uint32(&da->ea_size, &bp, &bs);
+	get_uint64(&da->size, &bp, &bs);
+	get_uint64(&da->alloc_size, &bp, &bs);
+	get_uint64(&da->create_time, &bp, &bs);
+	get_uint64(&da->change_time, &bp, &bs);
 	break;
     case 4:
-	get_uint32(&da->dosinfo_4.switch_version, &bp, &bs);
-	get_uint32(&da->dosinfo_4.valid_flags, &bp, &bs);
-	get_uint32(&da->dosinfo_4.attrib, &bp, &bs);
-	get_uint64(&da->dosinfo_4.itime, &bp, &bs);
-	get_uint64(&da->dosinfo_4.create_time, &bp, &bs);
+	get_uint32(&da->version, &bp, &bs);
+	get_uint32(&da->valid_flags, &bp, &bs);
+	get_uint32(&da->attribs, &bp, &bs);
+	get_uint64(&da->itime, &bp, &bs);
+	get_uint64(&da->create_time, &bp, &bs);
 	break;
     case 5:
-	get_uint32(&da->dosinfo_5.switch_version, &bp, &bs);
-	get_uint32(&da->dosinfo_5.valid_flags, &bp, &bs);
-	get_uint32(&da->dosinfo_5.attrib, &bp, &bs);
-	get_uint64(&da->dosinfo_5.create_time, &bp, &bs);
+	get_uint32(&da->version, &bp, &bs);
+	get_uint32(&da->valid_flags, &bp, &bs);
+	get_uint32(&da->attribs, &bp, &bs);
+	get_uint64(&da->create_time, &bp, &bs);
 	break;
     default:
 	return -3;
@@ -485,78 +466,146 @@ put_hex(unsigned char **bp,
     return 0;
 }
 
+int
+equal_dosattrib(DOSATTRIB *a,
+		DOSATTRIB *b) {
+    if ((a->valid_flags & DOSATTRIB_VALID_ATTRIB) !=
+	(b->valid_flags & DOSATTRIB_VALID_ATTRIB))
+	return 0;
+    
+    if ((a->valid_flags & DOSATTRIB_VALID_ATTRIB) &&
+	a->attribs != b->attribs)
+	return 0;
+
+    if ((a->valid_flags & DOSATTRIB_VALID_EA_SIZE) !=
+	(b->valid_flags & DOSATTRIB_VALID_EA_SIZE))
+	return 0;
+
+    if ((a->valid_flags & DOSATTRIB_VALID_EA_SIZE) &&
+	a->ea_size != b->ea_size)
+	return 0;
+    
+    if ((a->valid_flags & DOSATTRIB_VALID_SIZE) !=
+	(b->valid_flags & DOSATTRIB_VALID_SIZE))
+	return 0;
+
+    if ((a->valid_flags & DOSATTRIB_VALID_SIZE) &&
+	a->size != b->size)
+	return 0;
+    
+    if ((a->valid_flags & DOSATTRIB_VALID_ALLOC_SIZE) !=
+	(b->valid_flags & DOSATTRIB_VALID_ALLOC_SIZE))
+	return 0;
+
+    if ((a->valid_flags & DOSATTRIB_VALID_ALLOC_SIZE) &&
+	a->alloc_size != b->alloc_size)
+	return 0;
+    
+    if ((a->valid_flags & DOSATTRIB_VALID_CREATE_TIME) !=
+	(b->valid_flags & DOSATTRIB_VALID_CREATE_TIME))
+	return 0;
+
+    if ((a->valid_flags & DOSATTRIB_VALID_CREATE_TIME) &&
+	a->create_time != b->create_time)
+	return 0;
+    
+    if ((a->valid_flags & DOSATTRIB_VALID_CHANGE_TIME) !=
+	(b->valid_flags & DOSATTRIB_VALID_CHANGE_TIME))
+	return 0;
+
+    if ((a->valid_flags & DOSATTRIB_VALID_CHANGE_TIME) &&
+	a->change_time != b->change_time)
+	return 0;
+
+    if ((a->valid_flags & DOSATTRIB_VALID_CHANGE_TIME) !=
+	(b->valid_flags & DOSATTRIB_VALID_CHANGE_TIME))
+	return 0;
+
+    if ((a->valid_flags & DOSATTRIB_VALID_ITIME) &&
+	a->itime != b->itime)
+	return 0;
+
+    return 1;
+}
+
 ssize_t
 create_dosattrib(DOSATTRIB *da,
-		 int version,
 		 unsigned char *buf,
 		 size_t bs) {
     unsigned char *bp = buf;
 
-    switch (version) {
-    case 2:
-	put_hex(&bp, &bs, da->dosinfo_2.attrib, sizeof(da->dosinfo_2.attrib));
-	break;
-    case 3:
-	put_hex(&bp, &bs, da->dosinfo_3.attrib, sizeof(da->dosinfo_3.attrib));
-	break;
-    }
-
-    if (bs < 1)
-	return -1;
-
-    *bp++ = '\0';
-    bs--;
-    *bp++ = '\0';
-    bs--;
-
-    put_uint16(version, &bp, &bs);
-
-    switch (version) {
+    switch (da->version) {
     case 1:
-	put_uint32(da->dosinfo_1.switch_version, &bp, &bs);
-	put_uint32(da->dosinfo_1.attrib, &bp, &bs);
-	put_uint32(da->dosinfo_1.ea_size, &bp, &bs);
-	put_uint64(da->dosinfo_1.size, &bp, &bs);
-	put_uint64(da->dosinfo_1.alloc_size, &bp, &bs);
-	put_uint64(da->dosinfo_1.create_time, &bp, &bs);
-	put_uint64(da->dosinfo_1.change_time, &bp, &bs);
+    case 4:
+    case 5:
 	break;
+	
     case 2:
-	put_uint32(da->dosinfo_2.switch_version, &bp, &bs);
-	put_uint32(da->dosinfo_2.flags, &bp, &bs);
-	put_uint32(da->dosinfo_2.attrib, &bp, &bs);
-	put_uint32(da->dosinfo_2.ea_size, &bp, &bs);
-	put_uint64(da->dosinfo_2.size, &bp, &bs);
-	put_uint64(da->dosinfo_2.alloc_size, &bp, &bs);
-	put_uint64(da->dosinfo_2.create_time, &bp, &bs);
-	put_uint64(da->dosinfo_2.change_time, &bp, &bs);
-	put_uint64(da->dosinfo_2.write_time, &bp, &bs);
+	put_hex(&bp, &bs, da->attribs, sizeof(da->attribs));
 	break;
     case 3:
-	put_uint32(da->dosinfo_3.switch_version, &bp, &bs);
-	put_uint32(da->dosinfo_3.valid_flags, &bp, &bs);
-	put_uint32(da->dosinfo_3.attrib, &bp, &bs);
-	put_uint32(da->dosinfo_3.ea_size, &bp, &bs);
-	put_uint64(da->dosinfo_3.size, &bp, &bs);
-	put_uint64(da->dosinfo_3.alloc_size, &bp, &bs);
-	put_uint64(da->dosinfo_3.create_time, &bp, &bs);
-	put_uint64(da->dosinfo_3.change_time, &bp, &bs);
-	break;
-    case 4:
-	put_uint32(da->dosinfo_4.switch_version, &bp, &bs);
-	put_uint32(da->dosinfo_4.valid_flags, &bp, &bs);
-	put_uint32(da->dosinfo_4.attrib, &bp, &bs);
-	put_uint64(da->dosinfo_4.itime, &bp, &bs);
-	put_uint64(da->dosinfo_4.create_time, &bp, &bs);
-	break;
-    case 5:
-	put_uint32(da->dosinfo_5.switch_version, &bp, &bs);
-	put_uint32(da->dosinfo_5.valid_flags, &bp, &bs);
-	put_uint32(da->dosinfo_5.attrib, &bp, &bs);
-	put_uint64(da->dosinfo_5.create_time, &bp, &bs);
+	put_hex(&bp, &bs, da->attribs, sizeof(da->attribs));
 	break;
     default:
 	return -1;
+    }
+
+    if (bs < 1)
+	return -2;
+
+    *bp++ = '\0';
+    bs--;
+    *bp++ = '\0';
+    bs--;
+
+    put_uint16(da->version, &bp, &bs);
+
+    switch (da->version) {
+    case 1:
+	put_uint32(da->version, &bp, &bs);
+	put_uint32(da->attribs, &bp, &bs);
+	put_uint32(da->ea_size, &bp, &bs);
+	put_uint64(da->size, &bp, &bs);
+	put_uint64(da->alloc_size, &bp, &bs);
+	put_uint64(da->create_time, &bp, &bs);
+	put_uint64(da->change_time, &bp, &bs);
+	break;
+    case 2:
+	put_uint32(da->version, &bp, &bs);
+	put_uint32(da->valid_flags, &bp, &bs);
+	put_uint32(da->attribs, &bp, &bs);
+	put_uint32(da->ea_size, &bp, &bs);
+	put_uint64(da->size, &bp, &bs);
+	put_uint64(da->alloc_size, &bp, &bs);
+	put_uint64(da->create_time, &bp, &bs);
+	put_uint64(da->change_time, &bp, &bs);
+	put_uint64(da->write_time, &bp, &bs);
+	break;
+    case 3:
+	put_uint32(da->version, &bp, &bs);
+	put_uint32(da->valid_flags, &bp, &bs);
+	put_uint32(da->attribs, &bp, &bs);
+	put_uint32(da->ea_size, &bp, &bs);
+	put_uint64(da->size, &bp, &bs);
+	put_uint64(da->alloc_size, &bp, &bs);
+	put_uint64(da->create_time, &bp, &bs);
+	put_uint64(da->change_time, &bp, &bs);
+	break;
+    case 4:
+	put_uint32(da->version, &bp, &bs);
+	put_uint32(da->valid_flags, &bp, &bs);
+	put_uint32(da->attribs, &bp, &bs);
+	put_uint64(da->itime, &bp, &bs);
+	put_uint64(da->create_time, &bp, &bs);
+	break;
+    case 5:
+	put_uint32(da->version, &bp, &bs);
+	put_uint32(da->valid_flags, &bp, &bs);
+	put_uint32(da->attribs, &bp, &bs);
+	put_uint64(da->create_time, &bp, &bs);
+	break;
+    default:
+	return -3;
     }
 
     while (bs&3) {
@@ -572,8 +621,10 @@ nttime2time(uint64_t nt) {
 
     nt /= 10000000;
 
-    if (nt < 11644473600)
+    if (nt < 11644473600) {
+	fprintf(stderr, "nttime = %lu\n", nt);
         return 0; /* Before 1970-01-01... */
+    }
 
     nt -= 11644473600;
 
@@ -592,17 +643,63 @@ time2nttime(time_t bt) {
     return nt;
 }
 
+uint64_t
+timespec2nttime(const struct timespec *ts) {
+    uint64_t nt;
+
+    nt = ts->tv_sec * 10000000;
+    nt += ts->tv_nsec / 100;
+    nt += 116444736000000000;
+
+    return nt;
+}
+
+
 char *
 nttime2str(uint64_t nt) {
     time_t bt;
     struct tm *tp;
     static char buf[256];
 
+    if (nt == 0x7fffffffffffffff) {
+	strcpy(buf, "+∞");
+	return buf;
+    }
+    if (nt == 0x7fffffffffffffff) {
+	strcpy(buf, "-∞");
+	return buf;
+    }
+    
     bt = nttime2time(nt);
     tp = localtime(&bt);
 
-    strftime(buf, sizeof(buf), "%Y-%m-%d %T", tp);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %T %z", tp);
     return buf;
+}
+
+
+void
+print_dosattrib(DOSATTRIB *da) {
+    printf("%s", attrib2str(da->attribs));
+    if (f_verbose > 0)
+	printf(" (0x%02x)", da->attribs);
+    if (f_verbose > 1) {
+	printf(", version=%u", da->version);
+	if (da->version > 1)
+	    printf(", valid_flags=0x%02x", da->valid_flags);
+	if (da->valid_flags & DOSATTRIB_VALID_EA_SIZE)
+	    printf(", ea_size=%u", da->ea_size);
+	if (da->valid_flags & DOSATTRIB_VALID_SIZE)
+	    printf(", size=%lu", da->size);
+	if (da->valid_flags & DOSATTRIB_VALID_ALLOC_SIZE)
+	    printf(", alloc_size=%lu", da->alloc_size);
+	if (da->valid_flags & DOSATTRIB_VALID_CREATE_TIME)
+	    printf(", create_time=%s", nttime2str(da->create_time));
+	if (da->valid_flags & DOSATTRIB_VALID_CHANGE_TIME)
+	    printf(", change_time=%s", nttime2str(da->change_time));
+	if (da->valid_flags & DOSATTRIB_VALID_ITIME)
+	    printf(", itime=%s", nttime2str(da->itime));
+    }
 }
 
 
@@ -611,16 +708,14 @@ walker(const char *path,
        const struct stat *sp,
        int type,
        struct FTW *fp) {
-    ssize_t len, nlen;
+    ssize_t len, nlen = 0;
     size_t rlen;
-    DOSATTRIB da;
+    DOSATTRIB od, nd;
     unsigned char oblob[64], nblob[64];
-    int version;
-    uint16_t oa, na;
+    int version, d;
 #if defined(HAVE_ATTROPEN)
     int fd;
 #endif
-
 
     switch (type) {
     case FTW_DNR:
@@ -640,7 +735,7 @@ walker(const char *path,
 
     memset(oblob, 0, sizeof(oblob));
 
-    memset(&da, 0, sizeof(da));
+    memset(&od, 0, sizeof(od));
 #if defined(HAVE_EXTATTR_GET_LINK)
     /* FreeBSD */
     len = extattr_get_link(path, EXTATTR_NAMESPACE_USER, DOSATTRIBNAME,
@@ -668,126 +763,78 @@ walker(const char *path,
         if (!f_all)
             return 0; /* Skip */
 
-        /* Let's generate a synthetic attribute */
-        da.dosinfo_5.switch_version = version = 5;
-        da.dosinfo_5.valid_flags = 0x51;
-        da.dosinfo_5.attrib = 0x00;
-        da.dosinfo_5.create_time = 0;
+        /* Generate a synthetic attribute */
+        od.version = version = 5;
+        od.valid_flags = DOSATTRIB_VALID_ATTRIB;
+        od.attribs = 0x00;
+        od.create_time = 0;
+    } else {
+	rlen = 0;
+	version = parse_dosattrib(&od, oblob, len, &rlen);
     }
-
-    rlen = 0;
-    version = parse_dosattrib(&da, oblob, len, &rlen);
-
-    switch (version) {
-    case 1:
-	oa = da.dosinfo_1.attrib;
-	break;
-    case 2:
-	oa = da.dosinfo_2.attrib;
-	break;
-    case 3:
-	oa = da.dosinfo_3.attrib;
-	break;
-    case 4:
-	oa = da.dosinfo_4.attrib;
-	break;
-    case 5:
-	oa = da.dosinfo_5.attrib;
-	break;
-    default:
-	errno = EINVAL;
-	return -1;
-    }
-
-    na = oa;
-    if (f_orattribs != 0)
-	na |= f_orattribs;
-    if (f_andattribs != 0xFFFF)
-	na &= f_andattribs;
-
-    /* Sanity check real type vs attribute type */
-    if ((type == FTW_D || type == FTW_DP) &&
-	(na & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-	na |= FILE_ATTRIBUTE_DIRECTORY;
-    } else if (type == FTW_F &&
-	       (na & FILE_ATTRIBUTE_DIRECTORY) != 0) {
-	na &= ~FILE_ATTRIBUTE_DIRECTORY;
-    }
-
-    if (f_matchattribs && (f_matchattribs & oa) == 0)
+    
+    if (f_matchattribs && (f_matchattribs & od.attribs) == 0)
         return 0;
 
-    if (f_verbose || na != oa || (f_matchattribs & oa) != 0) {
-	printf("%s: %s", path, attrib2str(oa));
+    nd = od;
+    if (f_version)
+	nd.version = f_version;
+	
+    if (f_orattribs != 0)
+	nd.attribs |= f_orattribs;
+    if (f_andattribs != 0xFFFF)
+	nd.attribs &= f_andattribs;
 
-	if (f_verbose > 1)
-	    printf(" (0x%02x)", oa);
-	if (f_verbose > 2) {
-	    printf(": v%d", version);
-	    switch (version) {
-	    case 3:
-		printf(", valid_flags=0x%02x, create_time=%s",
-		       da.dosinfo_3.valid_flags, nttime2str(da.dosinfo_3.create_time));
-		break;
-	    case 4:
-		printf(", valid_flags=0x%02x, create_time=%s",
-		       da.dosinfo_4.valid_flags, nttime2str(da.dosinfo_4.create_time));
-                printf(", itime=%s", nttime2str(da.dosinfo_4.itime));
-		break;
-	    case 5:
-		printf(", valid_flags=0x%02x, create_time=%s",
-		       da.dosinfo_5.valid_flags, nttime2str(da.dosinfo_5.create_time));
-		break;
+    nd.valid_flags |= DOSATTRIB_VALID_ATTRIB;
+    
+    /* Sanity check real type vs attribute type */
+    if ((type == FTW_D || type == FTW_DP) &&
+	(nd.attribs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+	nd.attribs |= FILE_ATTRIBUTE_DIRECTORY;
+    } else if (type == FTW_F &&
+	       (nd.attribs & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+	nd.attribs &= ~FILE_ATTRIBUTE_DIRECTORY;
+    }
+
+#if defined(__FreeBSD__)
+    if (f_repair) {
+	uint64_t nct = timespec2nttime(&sp->st_birthtim);
+
+	if ((nd.valid_flags & DOSATTRIB_VALID_CREATE_TIME) == 0) {
+	    nd.create_time = nct;
+	    nd.valid_flags |= DOSATTRIB_VALID_CREATE_TIME;
+	    fprintf(stderr, "%s: Info: %s: Adding CreateTime\n",
+		    argv0, path);
+	} else {
+	    if (nct < nd.create_time) {
+		nd.create_time = nct;
+		fprintf(stderr, "%s: Info: %s: Updating CreateTime\n",
+			argv0, path);
 	    }
 	}
+    }
+#endif
+    d = !equal_dosattrib(&od, &nd);
+    fprintf(stderr, "f_force=%d, d=%d\n", f_force, d);
+    
+    if (f_verbose || f_force || d || (f_matchattribs & od.attribs) != 0) {
+	printf("%s: ", path);
+	print_dosattrib(&od);
+	
+	if (f_force || d) {
+	    printf(" -> ");
+	    print_dosattrib(&nd);
 
-	if (f_print) {
-	    int i;
-
-	    putchar(':');
-	    for (i = 0; i < len; i++)
-		printf(" %02x", oblob[i]);
-	}
-
-
-	if (na != oa) {
-	    printf(" -> %s", attrib2str(na));
-	    if (f_verbose > 1)
-		printf(" (0x%02x)", na);
-
-	    switch (version) {
-	    case 1:
-		da.dosinfo_1.attrib = na;
-		break;
-	    case 2:
-		da.dosinfo_2.attrib = na;
-		break;
-	    case 3:
-		da.dosinfo_3.attrib = na;
-		break;
-	    case 4:
-		da.dosinfo_4.attrib = na;
-		break;
-	    case 5:
-		da.dosinfo_5.attrib = na;
-		break;
-	    }
-
-	    nlen = create_dosattrib(&da, version, nblob, sizeof(nblob));
-	    if (f_verbose > 2) {
-		int i;
-
-		for (i = 0; i < nlen; i++)
-		    printf(" %02x", nblob[i]);
-	    }
-
+	    nlen = create_dosattrib(&nd, nblob, sizeof(nblob));
+	    fprintf(stderr, "nlen = %ld\n", nlen);
+	    
 	    if (f_update) {
 #if defined(HAVE_EXTATTR_SET_LINK) /* FreeBSD */
 		len = extattr_set_link(path, EXTATTR_NAMESPACE_USER, DOSATTRIBNAME, nblob, nlen);
 #elif defined(HAVE_LGETXATTR) /* Linux */
-		len = lsetxattr(path, DOSATTRIBNAME, oblob, sizeof(oblob), 0);
+		len = lsetxattr(path, DOSATTRIBNAME, nblob, nlen, 0);
 #elif defined(HAVE_GETXATTR) /* MacOS */
-		len = setxattr(path, DOSATTRIBNAME, oblob, sizeof(oblob), 0, XATTR_NOFOLLOW);
+		len = setxattr(path, DOSATTRIBNAME, nblob, nlen, 0, XATTR_NOFOLLOW);
 #elif defined(HAVE_ATTROPEN) /* Solaris */
 		fd = attropen(path, DOSATTRIBNAME, O_WRONLY);
 		if (fd < 0)
@@ -808,6 +855,20 @@ walker(const char *path,
 	}
 
 	putchar('\n');
+	if (f_print) {
+	    int i;
+	    
+	    printf("  Old:\t");
+	    for (i = 0; i < len; i++)
+		printf("%s%02x", (i > 0 ? " " : ""), oblob[i]);
+	    putchar('\n');
+	    if (nlen > 0) {
+		printf("  New:\t");
+		for (i = 0; i < nlen; i++)
+		    printf("%s%02x", (i > 0 ? " " : ""), nblob[i]);
+		putchar('\n');
+	    }
+	}
     }
     return 0;
 }
@@ -822,8 +883,14 @@ usage(void) {
     printf("  -h          Display this information\n");
     printf("  -n          No update (dry-run)\n");
     printf("  -v          Increase verbosity\n");
-    printf("  -r          Recurse\n");
+    printf("  -f          Increase verbosity\n");
+    printf("  -d          Increase debug level\n");
+    printf("  -i          Ignore errors and continue\n");
+    printf("  -a          Operate on all\n");
+    printf("  -u          Update/repair\n");
+    printf("  -r          Recurse into subdirectories\n");
     printf("  -m <flags>  Match files/dirs with flags\n");
+    printf("  -<1-5>      Override DOSATTRIB version\n");
     printf("  -           Stop parsing options/flags\n");
     printf("\nFlags:\n");
     for (i = 0; attribs[i].a; i++)
@@ -874,8 +941,24 @@ main(int argc,
 		case 'h':
 		    usage();
 		    exit(0);
+		case 'f':
+		    f_force++;
+		    break;
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		    f_version = argv[i][j]-'0';
+		    break;
 		case 'v':
 		    f_verbose++;
+		    break;
+		case 'u':
+		    f_repair++;
+		    break;
+		case 'd':
+		    f_debug++;
 		    break;
                 case 'i':
                     f_ignore++;
