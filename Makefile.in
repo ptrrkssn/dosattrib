@@ -122,7 +122,10 @@ $(PACKAGE)-$(VERSION).tar.gz: dosattrib
 	@echo ""
 	@echo "*** $(PACKAGE)-$(VERSION).tar.gz created"
 
-check:
+check:	dosattrib
+	mkdir -p t/d && touch t/f.txt
+	./dosattrib -fvvvap +A t/f.txt t/d
+	./dosattrib -vp t/f.txt
 	@echo OK
 
 distcheck:

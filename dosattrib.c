@@ -815,7 +815,6 @@ walker(const char *path,
     }
 #endif
     d = !equal_dosattrib(&od, &nd);
-    fprintf(stderr, "f_force=%d, d=%d\n", f_force, d);
     
     if (f_verbose || f_force || d || (f_matchattribs & od.attribs) != 0) {
 	printf("%s: ", path);
@@ -826,7 +825,6 @@ walker(const char *path,
 	    print_dosattrib(&nd);
 
 	    nlen = create_dosattrib(&nd, nblob, sizeof(nblob));
-	    fprintf(stderr, "nlen = %ld\n", nlen);
 	    
 	    if (f_update) {
 #if defined(HAVE_EXTATTR_SET_LINK) /* FreeBSD */
