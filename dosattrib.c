@@ -61,11 +61,14 @@
 
 int f_update = 1;
 int f_verbose = 0;
+int f_ignore = 0;
+int f_print = 0;
 int f_recurse = 0;
+int f_autofix = 0;
 
 uint16_t f_andattribs = 0xFFFF;
 uint16_t f_orattribs = 0;
-uint16_t f_searchattribs = 0;
+uint16_t f_matchattribs = 0;
 
 char *argv0;
 
@@ -94,23 +97,24 @@ char *argv0;
 struct attr {
     uint16_t a;
     char c;
+    char *d;
 } attribs[] = {
-    { FILE_ATTRIBUTE_READONLY,      'R' },
-    { FILE_ATTRIBUTE_HIDDEN,        'H' },
-    { FILE_ATTRIBUTE_SYSTEM,        'S' },
-    { FILE_ATTRIBUTE_VOLUME,        'v' },
-    { FILE_ATTRIBUTE_DIRECTORY,     'D' },
-    { FILE_ATTRIBUTE_ARCHIVE,       'A' },
-    { FILE_ATTRIBUTE_DEVICE,        'd' },
-    { FILE_ATTRIBUTE_NORMAL,        'N' },
-    { FILE_ATTRIBUTE_TEMPORARY,     'T' },
-    { FILE_ATTRIBUTE_SPARSE,        's' },
-    { FILE_ATTRIBUTE_REPARSE_POINT, 'L' },
-    { FILE_ATTRIBUTE_COMPRESSED,    'C' },
-    { FILE_ATTRIBUTE_OFFLINE,       'O' },
-    { FILE_ATTRIBUTE_NONINDEXED,    'I' },
-    { FILE_ATTRIBUTE_ENCRYPTED,     'E' },
-    { FILE_ATTRIBUTE_INTEGRITY,     'V' },
+    { FILE_ATTRIBUTE_READONLY,      'R', "Read-only file" },
+    { FILE_ATTRIBUTE_HIDDEN,        'H', "Hidden from directory listing" },
+    { FILE_ATTRIBUTE_SYSTEM,        'S', "System file or directory" },
+    { FILE_ATTRIBUTE_VOLUME,        'v', "Volume (reserved)" },
+    { FILE_ATTRIBUTE_DIRECTORY,     'D', "Directory" },
+    { FILE_ATTRIBUTE_ARCHIVE,       'A', "Archive" },
+    { FILE_ATTRIBUTE_DEVICE,        'd', "Device (reserved)" },
+    { FILE_ATTRIBUTE_NORMAL,        'N', "Normal" },
+    { FILE_ATTRIBUTE_TEMPORARY,     'T', "Temporary" },
+    { FILE_ATTRIBUTE_SPARSE,        's', "Sparse File (reserved)" },
+    { FILE_ATTRIBUTE_REPARSE_POINT, 'L', "Reparse Point" },
+    { FILE_ATTRIBUTE_COMPRESSED,    'C', "Compressed" },
+    { FILE_ATTRIBUTE_OFFLINE,       'O', "Offline" },
+    { FILE_ATTRIBUTE_NONINDEXED,    'I', "Non-Indexed" },
+    { FILE_ATTRIBUTE_ENCRYPTED,     'E', "Encrypted" },
+    { FILE_ATTRIBUTE_INTEGRITY,     'V', "Integrity" },
     { 0, 0 },
 };
 
@@ -144,22 +148,31 @@ attrib2str(uint16_t a) {
     for (i = 0; attribs[i].a; i++)
 	if (attribs[i].a & a)
 	    *bp++ = attribs[i].c;
-    
+
+    *bp = '\0';
     return buf;
 }
 
+#define XATTR_DOSINFO_ATTRIB       0x00000001
+#define	XATTR_DOSINFO_EA_SIZE      0x00000002
+#define	XATTR_DOSINFO_SIZE         0x00000004
+#define	XATTR_DOSINFO_ALLOC_SIZE   0x00000008
+#define	XATTR_DOSINFO_CREATE_TIME  0x00000010
+#define	XATTR_DOSINFO_CHANGE_TIME  0x00000020
+#define	XATTR_DOSINFO_ITIME        0x00000040
+
 typedef union {
     struct {
-	uint16_t version;
+	uint32_t switch_version;
 	uint32_t attrib;
 	uint32_t ea_size;
 	uint64_t size;
 	uint64_t alloc_size;
-	uint64_t create_time;
+    	uint64_t create_time;
 	uint64_t change_time;
     } dosinfo_1; /* 40 bytes */
     struct {
-	uint16_t version;
+	uint32_t switch_version;
 	uint32_t flags;
 	uint32_t attrib;
 	uint32_t ea_size;
@@ -170,7 +183,7 @@ typedef union {
 	uint64_t write_time;
     } dosinfo_2; /* 50 bytes */
     struct {
-	uint16_t version;
+	uint32_t switch_version;
 	uint32_t valid_flags;
 	uint32_t attrib;
 	uint32_t ea_size;
@@ -180,14 +193,14 @@ typedef union {
 	uint64_t change_time;
     } dosinfo_3; /* 44 bytes */
     struct {
-	uint16_t version;
+	uint32_t switch_version;
 	uint32_t valid_flags;
 	uint32_t attrib;
 	uint64_t itime;
 	uint64_t create_time;
     } dosinfo_4; /* 26 bytes */
     struct {
-	uint16_t version;
+	uint32_t switch_version;
 	uint32_t valid_flags;
 	uint32_t attrib;
 	uint64_t create_time;
@@ -230,12 +243,12 @@ get_uint16(uint16_t *vp,
 	return 0;
 
     *vp = 0;
-    for (i = 0; i < 2; i++) {
+    for (i = 1; i >= 0; i--) {
 	*vp <<= 8;
-	*vp |= (*bp)[0];
-	++(*bp);
-	--(*bs);
+	*vp |= (*bp)[i];
     }
+    (*bp) += 2;
+    (*bs) -= 2;
     return 1;
 }
 
@@ -250,12 +263,12 @@ get_uint32(uint32_t *vp,
     if (!*bs)
 	return 0;
     *vp = 0;
-    for (i = 0; i < 4; i++) {
+    for (i = 3; i >= 0; i--) {
 	*vp <<= 8;
-	*vp |= (*bp)[0];
-	++(*bp);
-	--(*bs);
+	*vp |= (*bp)[i];
     }
+    (*bp) += 4;
+    (*bs) -= 4;
     return 1;
 }
 
@@ -270,12 +283,12 @@ get_uint64(uint64_t *vp,
     if (!*bs)
 	return 0;
     *vp = 0;
-    for (i = 0; i < 8; i++) {
+    for (i = 7; i >= 0; i--) {
 	*vp <<= 8;
-	*vp |= (*bp)[0];
-	++(*bp);
-	--(*bs);
+	*vp |= (*bp)[i];
     }
+    (*bp) += 8;
+    (*bs) -= 8;
     return 1;
 }
 
@@ -357,17 +370,47 @@ parse_dosattrib(DOSATTRIB *da,
 	++bp;
 	--bs;
     }
+    if (bs > 0 && bp[0] == '\0') {
+	++bp;
+	--bs;
+    }
     if (!bs)
 	return 0;
   
     if (bs < 2)
 	return -2;
 
+    /*
+      v4:
+      HA (0x22):
+      00 00
+      04 00
+      04 00 00 00
+      51 00 00 00
+      22 00 00 00
+      9a bc 16 81 d5 bd d6 01
+      9a bc 16 81 d5 bd d6 01
+
+      v3:
+      HA (0x22):
+      30 78 32 32 "0x22"
+      00 00 # skip
+      03 00 # version
+      03 00 00 00 # switch_version
+      11 00 00 00 # valid_flags
+      22 00 00 00 # attrib
+      00 00 00 00 # ea_size
+      00 00 00 00 00 00 00 00 # size
+      00 00 00 00 00 00 00 00 # alloc_size
+      34 77 bd 39 2d 44 d6 01 # create_time
+      00 00 00 00 00 00 00 00 # change_time
+    */
+
     get_uint16(&version, &bp, &bs);
   
     switch (version) {
     case 1:
-	get_uint16(&da->dosinfo_1.version, &bp, &bs);
+	get_uint32(&da->dosinfo_1.switch_version, &bp, &bs);
 	get_uint32(&da->dosinfo_1.attrib, &bp, &bs);
 	get_uint32(&da->dosinfo_1.ea_size, &bp, &bs);
 	get_uint64(&da->dosinfo_1.size, &bp, &bs);
@@ -376,7 +419,7 @@ parse_dosattrib(DOSATTRIB *da,
 	get_uint64(&da->dosinfo_1.change_time, &bp, &bs);
 	break;
     case 2:
-	get_uint16(&da->dosinfo_2.version, &bp, &bs);
+	get_uint32(&da->dosinfo_2.switch_version, &bp, &bs);
 	get_uint32(&da->dosinfo_2.flags, &bp, &bs);
 	get_uint32(&da->dosinfo_2.attrib, &bp, &bs);
 	get_uint32(&da->dosinfo_2.ea_size, &bp, &bs);
@@ -387,7 +430,7 @@ parse_dosattrib(DOSATTRIB *da,
 	get_uint64(&da->dosinfo_2.write_time, &bp, &bs);
 	break;
     case 3:
-	get_uint16(&da->dosinfo_3.version, &bp, &bs);
+	get_uint32(&da->dosinfo_3.switch_version, &bp, &bs);
 	get_uint32(&da->dosinfo_3.valid_flags, &bp, &bs);
 	get_uint32(&da->dosinfo_3.attrib, &bp, &bs);
 	get_uint32(&da->dosinfo_3.ea_size, &bp, &bs);
@@ -397,14 +440,14 @@ parse_dosattrib(DOSATTRIB *da,
 	get_uint64(&da->dosinfo_3.change_time, &bp, &bs);
 	break;
     case 4:
-	get_uint16(&da->dosinfo_4.version, &bp, &bs);
+	get_uint32(&da->dosinfo_4.switch_version, &bp, &bs);
 	get_uint32(&da->dosinfo_4.valid_flags, &bp, &bs);
 	get_uint32(&da->dosinfo_4.attrib, &bp, &bs);
 	get_uint64(&da->dosinfo_4.itime, &bp, &bs);
 	get_uint64(&da->dosinfo_4.create_time, &bp, &bs);
 	break;
     case 5:
-	get_uint16(&da->dosinfo_5.version, &bp, &bs);
+	get_uint32(&da->dosinfo_5.switch_version, &bp, &bs);
 	get_uint32(&da->dosinfo_5.valid_flags, &bp, &bs);
 	get_uint32(&da->dosinfo_5.attrib, &bp, &bs);
 	get_uint64(&da->dosinfo_5.create_time, &bp, &bs);
@@ -463,12 +506,14 @@ create_dosattrib(DOSATTRIB *da,
     
     *bp++ = '\0';
     bs--;
+    *bp++ = '\0';
+    bs--;
     
     put_uint16(version, &bp, &bs);
   
     switch (version) {
     case 1:
-	put_uint16(da->dosinfo_1.version, &bp, &bs);
+	put_uint32(da->dosinfo_1.switch_version, &bp, &bs);
 	put_uint32(da->dosinfo_1.attrib, &bp, &bs);
 	put_uint32(da->dosinfo_1.ea_size, &bp, &bs);
 	put_uint64(da->dosinfo_1.size, &bp, &bs);
@@ -477,7 +522,7 @@ create_dosattrib(DOSATTRIB *da,
 	put_uint64(da->dosinfo_1.change_time, &bp, &bs);
 	break;
     case 2:
-	put_uint16(da->dosinfo_2.version, &bp, &bs);
+	put_uint32(da->dosinfo_2.switch_version, &bp, &bs);
 	put_uint32(da->dosinfo_2.flags, &bp, &bs);
 	put_uint32(da->dosinfo_2.attrib, &bp, &bs);
 	put_uint32(da->dosinfo_2.ea_size, &bp, &bs);
@@ -488,7 +533,7 @@ create_dosattrib(DOSATTRIB *da,
 	put_uint64(da->dosinfo_2.write_time, &bp, &bs);
 	break;
     case 3:
-	put_uint16(da->dosinfo_3.version, &bp, &bs);
+	put_uint32(da->dosinfo_3.switch_version, &bp, &bs);
 	put_uint32(da->dosinfo_3.valid_flags, &bp, &bs);
 	put_uint32(da->dosinfo_3.attrib, &bp, &bs);
 	put_uint32(da->dosinfo_3.ea_size, &bp, &bs);
@@ -498,14 +543,14 @@ create_dosattrib(DOSATTRIB *da,
 	put_uint64(da->dosinfo_3.change_time, &bp, &bs);
 	break;
     case 4:
-	put_uint16(da->dosinfo_4.version, &bp, &bs);
+	put_uint32(da->dosinfo_4.switch_version, &bp, &bs);
 	put_uint32(da->dosinfo_4.valid_flags, &bp, &bs);
 	put_uint32(da->dosinfo_4.attrib, &bp, &bs);
 	put_uint64(da->dosinfo_4.itime, &bp, &bs);
 	put_uint64(da->dosinfo_4.create_time, &bp, &bs);
 	break;
     case 5:
-	put_uint16(da->dosinfo_5.version, &bp, &bs);
+	put_uint32(da->dosinfo_5.switch_version, &bp, &bs);
 	put_uint32(da->dosinfo_5.valid_flags, &bp, &bs);
 	put_uint32(da->dosinfo_5.attrib, &bp, &bs);
 	put_uint64(da->dosinfo_5.create_time, &bp, &bs);
@@ -519,6 +564,22 @@ create_dosattrib(DOSATTRIB *da,
 	bs--;
     }
     return bp-buf;
+}
+
+char *
+nttime2str(uint64_t nt) {
+    time_t bt;
+    struct tm *tp;
+    static char buf[256];
+
+    nt /= 10000000;
+    nt -= 11644473600;
+
+    bt = nt;
+    tp = localtime(&bt);
+
+    strftime(buf, sizeof(buf), "%Y-%m-%d %T", tp);
+    return buf;
 }
 
 
@@ -541,6 +602,12 @@ walker(const char *path,
     switch (type) {
     case FTW_DNR:
     case FTW_NS:
+        if (f_ignore) {
+            if (f_verbose)
+                fprintf(stderr, "%s: Notice: %s: Unable to access [ignored]\n",
+                        argv0, path);
+            return 0;
+        }
 	fprintf(stderr, "%s: Error: %s: Unable to access\n",
 		argv0, path);
 	return -1;
@@ -613,13 +680,35 @@ walker(const char *path,
 	       (na & FILE_ATTRIBUTE_DIRECTORY) != 0) {
 	na &= ~FILE_ATTRIBUTE_DIRECTORY;
     }
+
+    if (f_matchattribs && (f_matchattribs & oa) == 0)
+        return 0;
     
-    if (f_verbose || na != oa || (f_searchattribs & oa) != 0) {
+    if (f_verbose || na != oa || (f_matchattribs & oa) != 0) {
 	printf("%s: %s", path, attrib2str(oa));
     
 	if (f_verbose > 1)
 	    printf(" (0x%02x)", oa);
 	if (f_verbose > 2) {
+	    printf(": v%d", version);
+	    switch (version) {
+	    case 3:
+		printf(", valid_flags=0x%02x, create_time=%s",
+		       da.dosinfo_3.valid_flags, nttime2str(da.dosinfo_3.create_time));
+		break;
+	    case 4:
+		printf(", valid_flags=0x%02x, create_time=%s",
+		       da.dosinfo_4.valid_flags, nttime2str(da.dosinfo_4.create_time));
+                printf(", itime=%s", nttime2str(da.dosinfo_4.itime));
+		break;
+	    case 5:
+		printf(", valid_flags=0x%02x, create_time=%s",
+		       da.dosinfo_5.valid_flags, nttime2str(da.dosinfo_5.create_time));
+		break;
+	    }
+	}
+	
+	if (f_print) {
 	    int i;
 	    
 	    putchar(':');
@@ -690,98 +779,110 @@ walker(const char *path,
     return 0;
 }
 
+void
+usage(void) {
+    int i;
+    
+    printf("Usage:\n  %s [<options>] [+|-|=]<flags>]* <path-1> [.. <path-N>]\n",
+	   argv0);
+    printf("\nOptions:\n");
+    printf("  -h          Display this information\n");
+    printf("  -n          No update (dry-run)\n");
+    printf("  -v          Increase verbosity\n");
+    printf("  -r          Recurse\n");
+    printf("  -m <flags>  Match files/dirs with flags\n");
+    printf("  -           Stop parsing options/flags\n");
+    printf("\nFlags:\n");
+    for (i = 0; attribs[i].a; i++)
+	printf("  %c           %s\n", attribs[i].c, attribs[i].d);
+}
+
+    
 int
 main(int argc,
      char *argv[]) {
     int i, j, rc = 0;
-    char *ap = NULL;
     uint16_t a;
 
     argv0 = argv[0];
     
-    for (i = 1; i < argc && argv[i][0] == '-'; i++) {
-	for (j = 1; argv[i][j]; j++)
-	    switch (argv[i][j]) {
-	    case 'h':
-		printf("Usage:\n\t%s [-hvrn] [-A<attribs>] [-U<attribs>] <path-1> [.. <path-N>]\n",
-		       argv[0]);
-		exit(0);
-	    case 'v':
-		f_verbose++;
-		break;
-	    case 'r':
-		f_recurse++;
-		break;
-	    case 'n':
-		f_update = 0;
-		break;
-		
-	    case 'S':
-		if (argv[i][j+1])
-		    rc = str2attrib(&a, ap = argv[i]+j+1);
-		else if (i+1 < argc)
-		    rc = str2attrib(&a, ap = argv[++i]);
-		else
-		    rc = 0;
-		if (rc == 0) {
-		    fprintf(stderr, "%s: Error: -S: Missing argument\n",
-			    argv[0]);
-		    exit (1);
-		} else if (rc < 0) {
-		    fprintf(stderr, "%s: Error: %s: Invalid argument for -S\n",
-			    argv[0], ap);
-		    exit (1);
-		}
-		f_searchattribs |= a;
-		goto NextArg;
-		
-	    case 'A':
-		if (argv[i][j+1])
-		    rc = str2attrib(&a, ap = argv[i]+j+1);
-		else if (i+1 < argc)
-		    rc = str2attrib(&a, ap = argv[++i]);
-		else
-		    rc = 0;
-		if (rc == 0) {
-		    fprintf(stderr, "%s: Error: -A: Missing argument\n",
-			    argv[0]);
-		    exit (1);
-		} else if (rc < 0) {
-		    fprintf(stderr, "%s: Error: %s: Invalid argument for -A\n",
-			    argv[0], ap);
-		    exit (1);
-		}
-		f_orattribs |= a;
-		goto NextArg;
-		
-	    case 'U':
-		if (argv[i][j+1])
-		    rc = str2attrib(&a, ap = argv[i]+j+1);
-		else if (i+1 < argc)
-		    rc = str2attrib(&a, ap = argv[++i]);
-		else
-		    rc = 0;
-		if (rc == 0) {
-		    fprintf(stderr, "%s: Error: -U: Missing argument\n",
-			    argv[0]);
-		    exit (1);
-		} else if (rc < 0) {
-		    fprintf(stderr, "%s: Error: %s: Invalid argument for -U\n",
-			    argv[0], ap);
-		    exit (1);
-		}
-		f_andattribs &= ~a;
-		goto NextArg;
-
-	    case '-':
-		++i;
-		goto EndArg;
-		
-	    default:
-		fprintf(stderr, "%s: Error: -%c: Invalid switch\n",
-			argv[0], argv[i][j]);
+    for (i = 1; i < argc && (argv[i][0] == '-' || argv[i][0] == '+' || argv[i][0] == '='); i++) {
+	switch (argv[i][0]) {
+	case '+':
+	    rc = str2attrib(&a, argv[i]+1);
+	    if (rc < 1) {
+		fprintf(stderr, "%s: Error: %s: Invalid attributes\n", argv[0], argv[i]+1);
 		exit(1);
 	    }
+	    f_orattribs |= a;
+	    break;
+	    
+	case '=':
+	    a = 0;
+	    rc = str2attrib(&a, argv[i]+1);
+	    if (rc < 1) {
+		fprintf(stderr, "%s: Error: %s: Invalid attributes\n", argv[0], argv[i]+1);
+		exit(1);
+	    }
+	    f_orattribs = a;
+	    f_andattribs = 0xFFFF;
+	    break;
+	    
+	case '-':
+	    a = 0;
+	    rc = str2attrib(&a, argv[i]+1);
+	    if (rc > 0) {
+		f_andattribs &= ~a;
+		break;
+	    }
+	    
+	    for (j = 1; argv[i][j]; j++)
+		switch (argv[i][j]) {
+		case 'h':
+		    usage();
+		    exit(0);
+		case 'v':
+		    f_verbose++;
+		    break;
+                case 'i':
+                    f_ignore++;
+                    break;
+		case 'p':
+		    f_print++;
+		    break;
+		case 'r':
+		    f_recurse++;
+		    break;
+		case 'n':
+		    f_update = 0;
+		    break;
+		case 'a':
+		    f_autofix++;
+		    break;
+                    
+		case 'm':
+		    if (argv[i][j+1])
+			rc = str2attrib(&f_matchattribs, argv[i]+j+1);
+		    else if (i+1 < argc)
+			rc = str2attrib(&f_matchattribs, argv[++i]);
+		    else
+			rc = -1;
+		    if (rc < 1) {
+			fprintf(stderr, "%s: Error: Missing argument for '-m'\n", argv[0]);
+			exit(1);
+		    }
+                    fprintf(stderr, "Got Match: 0x%02x\n", f_matchattribs);
+		    goto NextArg;
+		case '-':
+		    ++i;
+		    goto EndArg;
+		    
+		default:
+		    fprintf(stderr, "%s: Error: -%c: Invalid switch\n",
+			    argv[0], argv[i][j]);
+		    exit(1);
+		}
+	}
     NextArg:;
     }
  EndArg:;
