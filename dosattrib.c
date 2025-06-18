@@ -35,6 +35,7 @@
 #include "config.h"
 
 #define _XOPEN_SOURCE 800
+#define __BSD_VISIBLE 1
 
 #include <stdio.h>
 #include <time.h>
@@ -824,7 +825,7 @@ walker(const char *path,
     }
 
     if (f_repair) {
-#if defined(__FreeBSD__)
+#if defined(st_birthtime)
 	uint64_t nct = timespec2nttime(&sp->st_birthtim);
 
 	if ((nd.valid_flags & DOSATTRIB_VALID_CREATE_TIME) == 0) {
