@@ -827,7 +827,7 @@ walker(const char *path,
 
     if (f_repair) {
 #if defined(st_birthtime)
-	uint64_t nct = timespec2nttime(&sp->st_birthtim);
+	uint64_t nct = timespec2nttime(&sp->st_birthtimespec);
 
 	if ((nd.valid_flags & DOSATTRIB_VALID_CREATE_TIME) == 0) {
 	    nd.create_time = nct;
