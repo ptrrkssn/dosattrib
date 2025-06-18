@@ -36,6 +36,7 @@
 
 #define _XOPEN_SOURCE 800
 #define __BSD_VISIBLE 1
+#define _DARWIN_C_SOURCE 1
 
 #include <stdio.h>
 #include <time.h>
