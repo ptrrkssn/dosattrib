@@ -852,7 +852,6 @@ walker(const char *path,
     }
 
     d = !equal_dosattrib(&od, &nd);
-    fprintf(stderr, "d = %d\n", d);
     
     if (f_verbose || f_force || d) {
 	printf("%s: ", path);
@@ -868,18 +867,20 @@ walker(const char *path,
 #if defined(HAVE_EXTATTR_SET_LINK) /* FreeBSD */
 		len = extattr_set_link(path, EXTATTR_NAMESPACE_USER, DOSATTRIBNAME, nblob, nlen);
 #elif defined(HAVE_LGETXATTR) /* Linux */
-		len = lsetxattr(path, DOSATTRIBNAME, nblob, nlen, 0);
+		len = lsetxattr(path, DOSATTRIBNAME, nblob, nlen, 0) < 0 ? -1 : nlen;
 #elif defined(HAVE_GETXATTR) /* MacOS */
-		len = setxattr(path, DOSATTRIBNAME, nblob, nlen, 0, XATTR_NOFOLLOW);
+		len = setxattr(path, DOSATTRIBNAME, nblob, nlen, 0, XATTR_NOFOLLOW) < 0 ? -1 : nlen;
 #elif defined(HAVE_ATTROPEN) /* Solaris */
 		fd = attropen(path, DOSATTRIBNAME, O_WRONLY);
-		if (fd < 0)
-		    return -1;
-		len = write(fd, nblob, nlen);
-		close(fd);
+		if (fd >= 0) {
+		    len = write(fd, nblob, nlen);
+		    close(fd);
+		} else
+		    len = -1;
 #else
+		/* No way to write attribute */
 		errno = ENOSYS;
-		wlen = -1;
+		len = -1;
 #endif
 		if (len == nlen)
 		    printf(": Updated");
