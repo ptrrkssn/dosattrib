@@ -152,10 +152,13 @@ attrib2str(uint16_t a) {
     int i;
 
     bp = buf;
-    for (i = 0; attribs[i].a; i++)
-	if (attribs[i].a & a)
-	    *bp++ = attribs[i].c;
-
+    if (!a)
+	*bp++ = '-';
+    else
+	for (i = 0; attribs[i].a; i++)
+	    if (attribs[i].a & a)
+		*bp++ = attribs[i].c;
+    
     *bp = '\0';
     return buf;
 }
@@ -810,12 +813,15 @@ walker(const char *path,
     if (f_version)
 	nd.version = f_version;
 
-    if (f_orattribs != 0)
+    if (f_orattribs != 0) {
 	nd.attribs |= f_orattribs;
-    if (f_andattribs != 0xFFFF)
+	nd.valid_flags |= DOSATTRIB_VALID_ATTRIB;
+    }
+    
+    if (f_andattribs != 0xFFFF) {
 	nd.attribs &= f_andattribs;
-
-    nd.valid_flags |= DOSATTRIB_VALID_ATTRIB;
+	nd.valid_flags |= DOSATTRIB_VALID_ATTRIB;
+    }
 
     if (f_repair) {
 #if defined(__FreeBSD__)
@@ -846,7 +852,8 @@ walker(const char *path,
     }
 
     d = !equal_dosattrib(&od, &nd);
-
+    fprintf(stderr, "d = %d\n", d);
+    
     if (f_verbose || f_force || d) {
 	printf("%s: ", path);
 	print_dosattrib(&od);

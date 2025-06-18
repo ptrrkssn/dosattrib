@@ -124,7 +124,7 @@ $(PACKAGE)-$(VERSION).tar.gz: dosattrib
 
 check:	dosattrib
 	mkdir -p t/d && touch t/f.txt
-	./dosattrib -fvvvap +A t/f.txt t/d
+	./dosattrib -v5 +A t/f.txt
 	./dosattrib -vp t/f.txt
 	@echo OK
 
