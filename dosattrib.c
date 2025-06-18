@@ -639,7 +639,6 @@ nttime2time(uint64_t nt) {
     nt /= 10000000;
 
     if (nt < 11644473600) {
-	fprintf(stderr, "nttime = %lu\n", nt);
         return 0; /* Before 1970-01-01... */
     }
 
@@ -707,9 +706,9 @@ print_dosattrib(DOSATTRIB *da) {
 	if (da->valid_flags & DOSATTRIB_VALID_EA_SIZE)
 	    printf(", ea_size=%u", da->ea_size);
 	if (da->valid_flags & DOSATTRIB_VALID_SIZE)
-	    printf(", size=%lu", da->size);
+	    printf(", size=%llu", (long long unsigned int) da->size);
 	if (da->valid_flags & DOSATTRIB_VALID_ALLOC_SIZE)
-	    printf(", alloc_size=%lu", da->alloc_size);
+	    printf(", alloc_size=%llu", (long long unsigned int) da->alloc_size);
 	if (da->valid_flags & DOSATTRIB_VALID_CREATE_TIME)
 	    printf(", create_time=%s", nttime2str(da->create_time));
 	if (da->valid_flags & DOSATTRIB_VALID_CHANGE_TIME)
