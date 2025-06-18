@@ -67,12 +67,15 @@ int f_version = 0;
 int f_ignore = 0;
 int f_print = 0;
 int f_recurse = 0;
-int f_all = 0;
+int f_dirs = 0;
+int f_files = 0;
 int f_repair = 0;
 
 uint16_t f_andattribs = 0xFFFF;
 uint16_t f_orattribs = 0;
-uint16_t f_matchattribs = 0;
+
+uint16_t f_match_set = 0;
+uint16_t f_match_clr = 0;
 
 char *argv0;
 
@@ -165,6 +168,15 @@ attrib2str(uint16_t a) {
 #define	DOSATTRIB_VALID_CHANGE_TIME  0x00000020
 #define	DOSATTRIB_VALID_ITIME        0x00000040
 
+#define DOSATTRIB_VALID_V1 (DOSATTRIB_VALID_ATTRIB|DOSATTRIB_VALID_EA_SIZE|DOSATTRIB_VALID_SIZE|DOSATTRIB_VALID_ALLOC_SIZE|DOSATTRIB_VALID_CREATE_TIME|DOSATTRIB_VALID_CHANGE_TIME)
+
+#define DOSATTRIB_VALID_V3 (DOSATTRIB_VALID_ATTRIB|DOSATTRIB_VALID_EA_SIZE|DOSATTRIB_VALID_SIZE|DOSATTRIB_VALID_ALLOC_SIZE|DOSATTRIB_VALID_CREATE_TIME|DOSATTRIB_VALID_CHANGE_TIME)
+
+#define DOSATTRIB_VALID_V4 (DOSATTRIB_VALID_ATTRIB|DOSATTRIB_VALID_ITIME|DOSATTRIB_VALID_CREATE_TIME)
+
+#define DOSATTRIB_VALID_V5 (DOSATTRIB_VALID_ATTRIB|DOSATTRIB_VALID_CREATE_TIME)
+
+
 typedef struct {
     uint32_t version;
     uint32_t valid_flags;
@@ -248,7 +260,7 @@ get_uint64(uint64_t *vp,
     *vp = 0;
     for (i = 7; i >= 0; i--) {
 	uint8_t v;
-	
+
 	*vp <<= 8;
 	v = (*bp)[i];
 	*vp |= v;
@@ -324,7 +336,7 @@ parse_dosattrib(DOSATTRIB *da,
 
 
     memset(da, 0, sizeof(*da));
-    
+
     if (bs > 2 && bp[0] == '0' && bp[1] == 'x' && isxdigit(bp[2])) {
 	bp += 2;
 	bs -= 2;
@@ -472,7 +484,7 @@ equal_dosattrib(DOSATTRIB *a,
     if ((a->valid_flags & DOSATTRIB_VALID_ATTRIB) !=
 	(b->valid_flags & DOSATTRIB_VALID_ATTRIB))
 	return 0;
-    
+
     if ((a->valid_flags & DOSATTRIB_VALID_ATTRIB) &&
 	a->attribs != b->attribs)
 	return 0;
@@ -484,7 +496,7 @@ equal_dosattrib(DOSATTRIB *a,
     if ((a->valid_flags & DOSATTRIB_VALID_EA_SIZE) &&
 	a->ea_size != b->ea_size)
 	return 0;
-    
+
     if ((a->valid_flags & DOSATTRIB_VALID_SIZE) !=
 	(b->valid_flags & DOSATTRIB_VALID_SIZE))
 	return 0;
@@ -492,7 +504,7 @@ equal_dosattrib(DOSATTRIB *a,
     if ((a->valid_flags & DOSATTRIB_VALID_SIZE) &&
 	a->size != b->size)
 	return 0;
-    
+
     if ((a->valid_flags & DOSATTRIB_VALID_ALLOC_SIZE) !=
 	(b->valid_flags & DOSATTRIB_VALID_ALLOC_SIZE))
 	return 0;
@@ -500,7 +512,7 @@ equal_dosattrib(DOSATTRIB *a,
     if ((a->valid_flags & DOSATTRIB_VALID_ALLOC_SIZE) &&
 	a->alloc_size != b->alloc_size)
 	return 0;
-    
+
     if ((a->valid_flags & DOSATTRIB_VALID_CREATE_TIME) !=
 	(b->valid_flags & DOSATTRIB_VALID_CREATE_TIME))
 	return 0;
@@ -508,7 +520,7 @@ equal_dosattrib(DOSATTRIB *a,
     if ((a->valid_flags & DOSATTRIB_VALID_CREATE_TIME) &&
 	a->create_time != b->create_time)
 	return 0;
-    
+
     if ((a->valid_flags & DOSATTRIB_VALID_CHANGE_TIME) !=
 	(b->valid_flags & DOSATTRIB_VALID_CHANGE_TIME))
 	return 0;
@@ -539,7 +551,7 @@ create_dosattrib(DOSATTRIB *da,
     case 4:
     case 5:
 	break;
-	
+
     case 2:
 	put_hex(&bp, &bs, da->attribs, sizeof(da->attribs));
 	break;
@@ -669,7 +681,7 @@ nttime2str(uint64_t nt) {
 	strcpy(buf, "-∞");
 	return buf;
     }
-    
+
     bt = nttime2time(nt);
     tp = localtime(&bt);
 
@@ -712,7 +724,7 @@ walker(const char *path,
     size_t rlen;
     DOSATTRIB od, nd;
     unsigned char oblob[64], nblob[64];
-    int version, d;
+    int d;
 #if defined(HAVE_ATTROPEN)
     int fd;
 #endif
@@ -729,6 +741,13 @@ walker(const char *path,
 	fprintf(stderr, "%s: Error: %s: Unable to access\n",
 		argv0, path);
 	return -1;
+    }
+
+    if (f_files || f_dirs) {
+        if (type == FTW_F && !f_files)
+            return 0;
+        if ((type == FTW_D || type == FTW_DP) && !f_dirs)
+            return 0;
     }
 
     spin();
@@ -749,55 +768,57 @@ walker(const char *path,
 #elif defined(HAVE_ATTROPEN)
     /* Solaris */
     fd = attropen(path, DOSATTRIBNAME, O_RDONLY);
-    if (fd < 0)
-	return -1;
-    len = read(fd, oblob, sizeof(oblob));
-    close(fd);
+    if (fd >= 0) {
+        len = read(fd, oblob, sizeof(oblob));
+        close(fd);
+    } else
+        len = -1;
 #else
+    /* No way to read xattrs/extended attributes */
     errno = ENOSYS;
-    return -1;
+    len = -1;
 #endif
+
+    if (len >= 0) {
+	rlen = 0;
+        if (parse_dosattrib(&od, oblob, len, &rlen) <= 0) {
+            fprintf(stderr, "%s: Error: %s: Invalid DOSATTRIB\n",
+                    argv0, path);
+
+            if (!f_ignore)
+                exit(1);
+
+            len = -1;
+        }
+    }
+
     if (len < 0) {
         /* No such attribute */
 
-        if (!f_all)
-            return 0; /* Skip */
-
         /* Generate a synthetic attribute */
-        od.version = version = 5;
-        od.valid_flags = DOSATTRIB_VALID_ATTRIB;
-        od.attribs = 0x00;
-        od.create_time = 0;
-    } else {
-	rlen = 0;
-	version = parse_dosattrib(&od, oblob, len, &rlen);
+        memset(&od, 0, sizeof(od));
     }
-    
-    if (f_matchattribs && (f_matchattribs & od.attribs) == 0)
+
+    if ((f_match_set && (f_match_set & od.attribs) == 0) ||
+        (f_match_clr && (f_match_clr & od.attribs) != 0)) {
+        if (f_debug)
+            fprintf(stderr, "%s: No match\n", path);
         return 0;
+    }
 
     nd = od;
     if (f_version)
 	nd.version = f_version;
-	
+
     if (f_orattribs != 0)
 	nd.attribs |= f_orattribs;
     if (f_andattribs != 0xFFFF)
 	nd.attribs &= f_andattribs;
 
     nd.valid_flags |= DOSATTRIB_VALID_ATTRIB;
-    
-    /* Sanity check real type vs attribute type */
-    if ((type == FTW_D || type == FTW_DP) &&
-	(nd.attribs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-	nd.attribs |= FILE_ATTRIBUTE_DIRECTORY;
-    } else if (type == FTW_F &&
-	       (nd.attribs & FILE_ATTRIBUTE_DIRECTORY) != 0) {
-	nd.attribs &= ~FILE_ATTRIBUTE_DIRECTORY;
-    }
 
-#if defined(__FreeBSD__)
     if (f_repair) {
+#if defined(__FreeBSD__)
 	uint64_t nct = timespec2nttime(&sp->st_birthtim);
 
 	if ((nd.valid_flags & DOSATTRIB_VALID_CREATE_TIME) == 0) {
@@ -812,20 +833,30 @@ walker(const char *path,
 			argv0, path);
 	    }
 	}
-    }
 #endif
+
+        /* Sanity check real type vs attribute type */
+        if ((type == FTW_D || type == FTW_DP) &&
+            (nd.attribs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+            nd.attribs |= FILE_ATTRIBUTE_DIRECTORY;
+        } else if (type == FTW_F &&
+                   (nd.attribs & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+            nd.attribs &= ~FILE_ATTRIBUTE_DIRECTORY;
+        }
+    }
+
     d = !equal_dosattrib(&od, &nd);
-    
-    if (f_verbose || f_force || d || (f_matchattribs & od.attribs) != 0) {
+
+    if (f_verbose || f_force || d) {
 	printf("%s: ", path);
 	print_dosattrib(&od);
-	
+
 	if (f_force || d) {
 	    printf(" -> ");
 	    print_dosattrib(&nd);
 
 	    nlen = create_dosattrib(&nd, nblob, sizeof(nblob));
-	    
+
 	    if (f_update) {
 #if defined(HAVE_EXTATTR_SET_LINK) /* FreeBSD */
 		len = extattr_set_link(path, EXTATTR_NAMESPACE_USER, DOSATTRIBNAME, nblob, nlen);
@@ -855,7 +886,7 @@ walker(const char *path,
 	putchar('\n');
 	if (f_print) {
 	    int i;
-	    
+
 	    printf("  Old:\t");
 	    for (i = 0; i < len; i++)
 		printf("%s%02x", (i > 0 ? " " : ""), oblob[i]);
@@ -884,9 +915,9 @@ usage(void) {
     printf("  -f          Increase verbosity\n");
     printf("  -d          Increase debug level\n");
     printf("  -i          Ignore errors and continue\n");
-    printf("  -a          Operate on all\n");
-    printf("  -u          Update/repair\n");
-    printf("  -r          Recurse into subdirectories\n");
+    printf("  -c          Correct errors (where possible)\n");
+    printf("  -r          Recurse and operate on directories\n");
+    printf("  -s          Recurse and operate on files\n");
     printf("  -m <flags>  Match files/dirs with flags\n");
     printf("  -<1-5>      Override DOSATTRIB version\n");
     printf("  -           Stop parsing options/flags\n");
@@ -901,6 +932,8 @@ main(int argc,
      char *argv[]) {
     int i, j, rc = 0;
     uint16_t a;
+    char *s;
+
 
     argv0 = argv[0];
 
@@ -952,7 +985,7 @@ main(int argc,
 		case 'v':
 		    f_verbose++;
 		    break;
-		case 'u':
+		case 'c':
 		    f_repair++;
 		    break;
 		case 'd':
@@ -966,26 +999,83 @@ main(int argc,
 		    break;
 		case 'r':
 		    f_recurse++;
+                    f_dirs++;
+		    break;
+		case 's':
+		    f_recurse++;
+                    f_files++;
 		    break;
 		case 'n':
 		    f_update = 0;
 		    break;
-		case 'a':
-		    f_all++;
-		    break;
-
 		case 'm':
-		    if (argv[i][j+1])
-			rc = str2attrib(&f_matchattribs, argv[i]+j+1);
-		    else if (i+1 < argc)
-			rc = str2attrib(&f_matchattribs, argv[++i]);
-		    else
+                    s = argv[i]+j+1;
+		    if (*s) {
+                        uint16_t a = 0;
+
+                        switch (*s) {
+                        case '+':
+                            rc = str2attrib(&a, s);
+                            if (rc >= 0)
+                                f_match_set = a;
+                            break;
+                        case '-':
+                            rc = str2attrib(&a, s);
+                            if (rc >= 0)
+                                f_match_clr = a;
+                            break;
+                        case '=':
+                            rc = str2attrib(&a, s);
+                            if (rc >= 0) {
+                                f_match_set = a;
+                                f_match_clr = ~a;
+                            }
+                            break;
+                        default:
+                            rc = str2attrib(&a, s);
+                            if (rc >= 0) {
+                                f_match_set = a;
+                                f_match_clr = ~a;
+                            }
+                            break;
+                        }
+                    } else if (i+1 < argc) {
+                        uint16_t a = 0;
+                        s = argv[++i];
+
+                        switch (*s) {
+                        case '+':
+                            rc = str2attrib(&a, s);
+                            if (rc >= 0)
+                                f_match_set = a;
+                            break;
+                        case '-':
+                            rc = str2attrib(&a, s);
+                            if (rc >= 0)
+                                f_match_clr = a;
+                            break;
+                        case '=':
+                            rc = str2attrib(&a, s);
+                            if (rc >= 0) {
+                                f_match_set = a;
+                                f_match_clr = ~a;
+                            }
+                            break;
+                        default:
+                            rc = str2attrib(&a, s);
+                            if (rc >= 0) {
+                                f_match_set = a;
+                                f_match_clr = ~a;
+                            }
+                            break;
+                        }
+		    } else
 			rc = -1;
+
 		    if (rc < 1) {
 			fprintf(stderr, "%s: Error: Missing argument for '-m'\n", argv[0]);
 			exit(1);
 		    }
-                    fprintf(stderr, "Got Match: 0x%02x\n", f_matchattribs);
 		    goto NextArg;
 		case '-':
 		    ++i;
